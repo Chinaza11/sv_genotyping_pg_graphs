@@ -1,10 +1,10 @@
 #! /bin/bash
 
 #SBATCH --partition=Orion
-#SBATCH --ntasks=2
-#SBATCH --cpus-per-task=22
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=20
 #SBATCH --time=3-00:00:00
-#SBATCH --mem=1000GB
+#SBATCH --mem=100GB
 #SBATCH --mail-user=cnnamdi@charlotte.edu
 #SBATCH --mail-type=ALL
 
@@ -95,7 +95,7 @@ COMMENT
 # paftools
 #=================================================================================
 
-#: << 'COMMENT'
+: << 'COMMENT'
 
 module load anaconda3/2023.09
 conda activate minimap2
@@ -108,9 +108,6 @@ for file in sv_output/minimap2/*.paf; do
     paftools.js stat "$file"
     echo "--------------------------------------"
 done
-
-# slurm-4159729.out
-# slurm-_______.out
 
 #---------------------------------------------------------------------------------
 # variant calling
@@ -128,10 +125,45 @@ export -f paftools_vc
 
 find sv_output/minimap2/*.paf | parallel -j 6 --joblog $pjl/paftools_vc.txt paftools_vc {}
 
-# slurm-4159743.out
-# slurm-_______.out
+# slurm-4295838.out
 
-#COMMENT
+COMMENT
+
+#=================================================================================
+# covert paftools vcf to bed
+#=================================================================================
+
+: << 'COMMENT'
+
+for file in sv_output/paftools/*.vcf
+do
+	echo ""
+	echo "--------------------------------------"
+	species_name=$(basename $file | awk -F'.' '{print $1}')
+	echo $species_name
+	echo "--------------------------------------"
+	
+	# deletions
+	grep -ve "^#" $file | awk '
+		OFS="\t" { 
+			if (length($4)-length($5) > 19 && length($5) < 5) { 
+				print $1, $2, $2+(length($4)-1), $3, $6, "Deletion", $4, $8, "'"$species_name"'" 
+			} 
+		}' > sv_output/bed/paftools.$species_name.del.bed
+
+	# insertions
+	grep -ve "^#" $file | awk '
+		OFS="\t" { 
+			if (length($5)-length($4) > 19 && length($4) < 5) { 
+				print $1, $2, $2+(length($5)-1), $3, $6, "Insertion", $5, $8, "'"$species_name"'" 
+			} 
+		}' > sv_output/bed/paftools.$species_name.ins.bed
+done
+
+#slurm-4299585.out
+
+COMMENT
+
 
 #=================================================================================
 #=================================================================================
@@ -179,7 +211,42 @@ export -f mummer_n_syri
 
 find genomes/*.fa | parallel -j 6 --joblog $pjl/mummer_n_syri.txt mummer_n_syri {}
 
-# slurm-_____.out
+# slurm-4295825.out
+
+COMMENT
+
+#=================================================================================
+# covert syri vcf to bed
+#=================================================================================
+
+: << 'COMMENT'
+
+for file in sv_output/syri/*.vcf
+do
+        echo ""
+        echo "--------------------------------------"
+        species_name=$(basename $file | awk -F'.' '{print $1}')
+        echo $species_name
+        echo "--------------------------------------"
+
+        # deletions
+        grep -ve "^#" $file | awk '
+                OFS="\t" {
+                        if (length($4)-length($5) > 19 && length($5) < 5) {
+                                print $1, $2, $2+(length($4)-1), $3, $6, "Deletion", $4, $8, "'"$species_name"'"
+                        }
+                }' > sv_output/bed/syri.$species_name.del.bed
+
+        # insertions
+        grep -ve "^#" $file | awk '
+                OFS="\t" {
+                        if (length($5)-length($4) > 19 && length($4) < 5) {
+                                print $1, $2, $2+(length($5)-1), $3, $6, "Insertion", $5, $8, "'"$species_name"'"
+                        }
+                }' > sv_output/bed/syri.$species_name.ins.bed
+done
+
+#slurm-4300973.out
 
 COMMENT
 
@@ -196,38 +263,253 @@ COMMENT
 #=================================================================================
 
 
+#=================================================================================
+# last
+#=================================================================================
+
+: << 'COMMENT'
+
+module load anaconda3/2023.09
+conda activate last
+
+export dir="genomes/reference_genome"
+
+#lastdb -R01 $dir/lastdb/riouncc $dir/riouncc.fa
+
+run_last() {
+        echo ""
+        echo "--------------------------------------"
+        species_name=$(basename $1 | awk -F'.' '{print $1}')
+
+        echo $species_name
+        echo "--------------------------------------"
+	
+	#lastal -e25 -v -q3 -j4 "$dir/lastdb/riouncc" $1 | last-split -s35 -v | gzip > sv_output/last/$species_name.maf.gz
+	lastal -e25 -v -q3 -j4 "$dir/lastdb/riouncc" $1 | last-split -s35 -v | gzip > sv_output/last2/$species_name.maf.gz
+}
+
+export -f run_last
+
+#find genomes/*.fa | parallel -j 4 --joblog $pjl/run_last.txt run_last {}
+# slurm-_______.out
+
+# not enough time was selected above so rerunning it for the last 4 genomes to save time
+find genomes -type f \( -name "pi5*.fa" -o -name "pi6*.fa" \) | parallel -j 4 --joblog $pjl/run_last2.txt run_last {}
+# slurm-_______.out
+
+COMMENT
+
+
+#=================================================================================
+# asmvar
+#=================================================================================
+
+: << 'COMMENT'
+
+run_asmvar() {
+        echo ""
+        echo "--------------------------------------"
+        species_name=$(basename $1 | awk -F'.' '{print $1}')
+
+        echo $species_name
+        echo "--------------------------------------"
+
+	for chr in $(grep ">" genomes/SK1.genome.fa | sed 's/>//')
+	do
+		echo "--------------------------------------"
+		echo $chr
+		echo "--------------------------------------"
+		ASV_VariantDetector -s $species_name \
+			-r $chr \
+			-i sv_output/last/$species_name.maf.gz \
+			-t genomes/reference_genome/S288C.genome.fa \
+			-q $1 \
+			-o sv_output/asmvar/$species_name.$chr \
+			> sv_output/asmvar/$species_name.$chr.age \
+			2> sv_output/asmvar/$species_name.$chr.log
+	done
+}
+
+export -f run_asmvar
+
+find genomes/*.fa | parallel -j 4 --joblog $pjl/run_asmvar.txt run_asmvar {}
+
+# slurm-_______.out
+
+COMMENT
+
+#=================================================================================
+# cat asmvar
+#=================================================================================
+
+: << 'COMMENT'
+
+for file in genomes/*.fa
+do
+	echo ""
+	echo "--------------------------------------"
+	species_name=$(basename $file | awk -F'.' '{print $1}')
+
+	echo $species_name
+	echo "--------------------------------------"
+	output="sv_output/asmvar"
+
+	cat $output/$species_name*.vcf | grep -v \"#\" | \
+		cat <(grep -e \"^#\" $output/$species_name.chrI.vcf) - > $output/$species_name.allchr.vcf
+	
+done
+
+COMMENT
+
+#=================================================================================
+# convert asmvar vcf to bed
+#=================================================================================
+
+: << 'COMMENT'
+
+for file in sv_output/asmvar/*allchr.vcf
+do
+	echo ""
+        echo "--------------------------------------"
+        species_name=$(basename $file | awk -F'.' '{print $1}')
+        echo $species_name
+        echo "--------------------------------------"
+	
+	# deletions
+	grep -ve "^#" $file | awk '
+		OFS="\t" {
+			if ($7 == "." || $7 == "AGEFALSE") { 
+				if (length($4)-length($5)>19 && length($5) < 5) { 
+					print $1, $2, $2+(length($4)-1), $3, $6, "Deletion", $4, $8, "'"$species_name"'" 
+				} 
+			} 
+		}' > sv_output/asmvar.$species_name.del.bed
+	
+	# insertions
+	grep -ve "^#" $file | awk '
+		OFS="\t" { 
+			if ($7 == "." || $7 == "AGEFALSE") { 
+				if (length($5)-length($4)>19 && length($4) < 5) { 
+					print $1, $2, $2+(length($5)-1), $3, $6, "Insertion", $5, $8, "'"$species_name"'" 
+				} 
+			} 
+		}' > sv_output/asmvar.$species_name.ins.bed
+
+done
+
+COMMENT
+
+#=================================================================================
+#=================================================================================
+#=================================================================================
+
+#=================================================================================
+# merge callsets
+# Create high-sensitivity set (union of all three callsets) for each strain
+#=================================================================================
+
+: << 'COMMENT'
+
+module load bedtools2/2.29.0
+
+for file in genomes/*.fa
+do
+        echo ""
+        echo "--------------------------------------"
+        species_name=$(basename $file | awk -F'.' '{print $1}')
+        echo $species_name
+        echo "--------------------------------------"
+
+	for i in ins del;
+	do
+		echo $i
+		echo "--------------------------------------"
+		cat sv_output/paftools.$species_name.$i.bed \
+			<(bedtools intersect \
+				-a sv_output/asmvar.$species_name.$i.bed \
+				-b sv_output/paftools.$species_name.$i.bed \
+				-v -r -f 0.5) \
+			<(bedtools intersect \
+				-a sv_output/assemblytics.$species_name.$i.bed \
+				-b sv_output/asmvar.$species_name.$i.bed \
+					sv_output/paftools.$species_name.$i.bed \
+				-v -r -f 0.5) \
+		> sv_output/unions/union.$species_name.$i.bed
+	done
+done
+
+COMMENT
+
+#=================================================================================
+# merge strains
+#=================================================================================
+
+: << 'COMMENT'
+
+module load bedtools2/2.29.0
+
+for i in ins del;
+do
+	echo $i
+	echo "--------------------------------------"
+	cat sv_output/unions/union.UFRJ50816.$i.bed \
+		<(bedtools intersect \
+			-a sv_output/unions/union.YPS128.$i.bed \
+			-b sv_output/unions/union.UFRJ50816.$i.bed \ 
+			-v -r -f 0.9) \
+		<(bedtools intersect \
+			-a sv_output/unions/union.CBS432.$i.bed \
+			-b sv_output/unions/union.UFRJ50816.$i.bed \
+				sv_output/unions/union.YPS128.$i.bed \
+			-v -r -f 0.9) \
+		<(bedtools intersect \
+			-a sv_output/unions/union.SK1.$i.bed \
+			-b sv_output/unions/union.UFRJ50816.$i.bed \
+				sv_output/unions/union.YPS128.$i.bed \
+				sv_output/unions/union.CBS432.$i.bed \
+			-v -r -f 0.9) \
+	| sort -k1,1V -k2,2n -k3,3n -k6,6 -k7,7 -u \
+	> sv_output/unions/merged.$i.bed
+done
+
+COMMENT
+
+#=================================================================================
+# convert bed to vcf
+#=================================================================================
+
+: << 'COMMENT'
+
+cat <(
+    awk 'OFS="\t" { 
+        print $1, $2, $4, $7, substr($7,1,1), $5, "PASS", "SVTYPE=DEL;" $8, "GT", "1/1" 
+    }' sv_output/unions/merged.del.bed
+) <(
+    awk 'OFS="\t" { 
+        print $1, $2, $4, substr($7,1,1), $7, $5, "PASS", "SVTYPE=INS;" $8, "GT", "1/1" 
+    }' sv_output/unions/merged.ins.bed
+) | sort -k1,1V -k2,2n -u | cat vcf_header_gt.vcf - > sv_output/final/sv.vcf
+
+COMMENT
+
+#=================================================================================
+# compress sv.vcf and index it
+#=================================================================================
+
+: << 'COMMENT'
+
+module load samtools/1.19
+
+bgzip -c sv_output/final/sv.vcf > sv_output/final/sv.vcf.gz
+
+tabix -p vcf sv_output/final/sv.vcf.gz 
+
+COMMENT
 
 #=================================================================================
 #
 #=================================================================================
 
-#=================================================================================
-#
-#=================================================================================
-
-#=================================================================================
-#
-#=================================================================================
-
-#=================================================================================
-#
-#=================================================================================
-
-#=================================================================================
-#
-#=================================================================================
-
-#=================================================================================
-#
-#=================================================================================
-
-#=================================================================================
-#
-#=================================================================================
-
-#=================================================================================
-#
-#=================================================================================
 
 echo ""
 echo "======================================================"
