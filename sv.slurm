@@ -2,9 +2,9 @@
 
 #SBATCH --partition=Orion
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=20
-#SBATCH --time=3-00:00:00
-#SBATCH --mem=100GB
+#SBATCH --cpus-per-task=10
+#SBATCH --time=10-00:00:00
+#SBATCH --mem=50GB
 #SBATCH --mail-user=cnnamdi@charlotte.edu
 #SBATCH --mail-type=ALL
 
@@ -291,14 +291,13 @@ run_last() {
 export -f run_last
 
 #find genomes/*.fa | parallel -j 4 --joblog $pjl/run_last.txt run_last {}
-# slurm-_______.out
+# slurm-4296422.out
 
 # not enough time was selected above so rerunning it for the last 4 genomes to save time
 find genomes -type f \( -name "pi5*.fa" -o -name "pi6*.fa" \) | parallel -j 4 --joblog $pjl/run_last2.txt run_last {}
-# slurm-_______.out
+# slurm-4299940.out
 
 COMMENT
-
 
 #=================================================================================
 # asmvar
@@ -309,32 +308,27 @@ COMMENT
 run_asmvar() {
         echo ""
         echo "--------------------------------------"
-        species_name=$(basename $1 | awk -F'.' '{print $1}')
-
         echo $species_name
+	echo $1
+	echo chr$2
         echo "--------------------------------------"
 
-	for chr in $(grep ">" genomes/SK1.genome.fa | sed 's/>//')
-	do
-		echo "--------------------------------------"
-		echo $chr
-		echo "--------------------------------------"
-		ASV_VariantDetector -s $species_name \
-			-r $chr \
-			-i sv_output/last/$species_name.maf.gz \
-			-t genomes/reference_genome/S288C.genome.fa \
-			-q $1 \
-			-o sv_output/asmvar/$species_name.$chr \
-			> sv_output/asmvar/$species_name.$chr.age \
-			2> sv_output/asmvar/$species_name.$chr.log
-	done
+	ASV_VariantDetector -s $species_name \
+		-r chr$2 \
+		-i sv_output/last/$species_name.maf.gz \
+		-t genomes/reference_genome/riouncc.fa \
+		-q $1 \
+		-o sv_output/asmvar/$species_name.chr$2 \
+		> sv_output/asmvar/$species_name.chr$2.age \
+		2> sv_output/asmvar/$species_name.chr$2.log
 }
 
 export -f run_asmvar
+export species_name="pi655972" #was changed to each of the genomes name
 
-find genomes/*.fa | parallel -j 4 --joblog $pjl/run_asmvar.txt run_asmvar {}
+parallel --joblog $pjl/run_asmvar_$species_name.txt run_asmvar genomes/$species_name.fa ::: {1..10}
 
-# slurm-_______.out
+#slurm-4327482.out, 4327485, 4327486, 4327488, 4327489, 4327490, 4327492, 4327494, 4327506-4327513
 
 COMMENT
 
@@ -354,10 +348,12 @@ do
 	echo "--------------------------------------"
 	output="sv_output/asmvar"
 
-	cat $output/$species_name*.vcf | grep -v \"#\" | \
-		cat <(grep -e \"^#\" $output/$species_name.chrI.vcf) - > $output/$species_name.allchr.vcf
+	cat $(ls -v $output/$species_name*.vcf) | grep -v \"#\" | \
+		cat <(grep -e \"^#\" $output/$species_name.chr1.vcf) - > $output/$species_name.allchr.vcf
 	
 done
+
+#slurm-4333155.out
 
 COMMENT
 
@@ -383,7 +379,7 @@ do
 					print $1, $2, $2+(length($4)-1), $3, $6, "Deletion", $4, $8, "'"$species_name"'" 
 				} 
 			} 
-		}' > sv_output/asmvar.$species_name.del.bed
+		}' > sv_output/bed/asmvar.$species_name.del.bed
 	
 	# insertions
 	grep -ve "^#" $file | awk '
@@ -393,9 +389,11 @@ do
 					print $1, $2, $2+(length($5)-1), $3, $6, "Insertion", $5, $8, "'"$species_name"'" 
 				} 
 			} 
-		}' > sv_output/asmvar.$species_name.ins.bed
+		}' > sv_output/bed/asmvar.$species_name.ins.bed
 
 done
+
+#slurm-4333204.out
 
 COMMENT
 
@@ -424,19 +422,21 @@ do
 	do
 		echo $i
 		echo "--------------------------------------"
-		cat sv_output/paftools.$species_name.$i.bed \
+		cat sv_output/bed/paftools.$species_name.$i.bed \
 			<(bedtools intersect \
-				-a sv_output/asmvar.$species_name.$i.bed \
-				-b sv_output/paftools.$species_name.$i.bed \
+				-a sv_output/bed/asmvar.$species_name.$i.bed \
+				-b sv_output/bed/paftools.$species_name.$i.bed \
 				-v -r -f 0.5) \
 			<(bedtools intersect \
-				-a sv_output/assemblytics.$species_name.$i.bed \
-				-b sv_output/asmvar.$species_name.$i.bed \
-					sv_output/paftools.$species_name.$i.bed \
+				-a sv_output/bed/syri.$species_name.$i.bed \
+				-b sv_output/bed/asmvar.$species_name.$i.bed \
+					sv_output/bed/paftools.$species_name.$i.bed \
 				-v -r -f 0.5) \
 		> sv_output/unions/union.$species_name.$i.bed
 	done
 done
+
+#slurm_4333218.out
 
 COMMENT
 
@@ -448,29 +448,29 @@ COMMENT
 
 module load bedtools2/2.29.0
 
-for i in ins del;
-do
-	echo $i
-	echo "--------------------------------------"
-	cat sv_output/unions/union.UFRJ50816.$i.bed \
-		<(bedtools intersect \
-			-a sv_output/unions/union.YPS128.$i.bed \
-			-b sv_output/unions/union.UFRJ50816.$i.bed \ 
-			-v -r -f 0.9) \
-		<(bedtools intersect \
-			-a sv_output/unions/union.CBS432.$i.bed \
-			-b sv_output/unions/union.UFRJ50816.$i.bed \
-				sv_output/unions/union.YPS128.$i.bed \
-			-v -r -f 0.9) \
-		<(bedtools intersect \
-			-a sv_output/unions/union.SK1.$i.bed \
-			-b sv_output/unions/union.UFRJ50816.$i.bed \
-				sv_output/unions/union.YPS128.$i.bed \
-				sv_output/unions/union.CBS432.$i.bed \
-			-v -r -f 0.9) \
-	| sort -k1,1V -k2,2n -k3,3n -k6,6 -k7,7 -u \
-	> sv_output/unions/merged.$i.bed
+INPUT_DIR="sv_output/unions"
+OUTPUT_DIR="sv_output/unions"
+
+SAMPLES=("grassl" "grif16309" "leoti" "pi229841" "pi297155" "pi329250" "pi329311" "pi506069" "pi510757" "pi532566" "pi655972")
+
+for i in ins del; do
+    echo "$i"
+    echo "--------------------------------------"
+    OUTPUT_FILE="$OUTPUT_DIR/merged.$i.bed"
+    cat "$INPUT_DIR/union.chineseamber.$i.bed" > "$OUTPUT_FILE.tmp"
+
+    for ((idx=0; idx<${#SAMPLES[@]}; idx++)); do
+        SAMPLE=${SAMPLES[$idx]}
+		echo "$SAMPLE"
+        bedtools intersect -a "$INPUT_DIR/union.$SAMPLE.$i.bed" -b "$OUTPUT_FILE.tmp" -v -r -f 0.9 >> "$OUTPUT_FILE.tmp"
+    done
+
+    sort -k1,1V -k2,2n -k3,3n -k6,6 -k7,7 -u "$OUTPUT_FILE.tmp" > "$OUTPUT_FILE"
+    rm "$OUTPUT_FILE.tmp"
+
 done
+
+# slurm-4334433.out
 
 COMMENT
 
@@ -490,6 +490,8 @@ cat <(
     }' sv_output/unions/merged.ins.bed
 ) | sort -k1,1V -k2,2n -u | cat vcf_header_gt.vcf - > sv_output/final/sv.vcf
 
+# slurm-4334472.out
+
 COMMENT
 
 #=================================================================================
@@ -503,6 +505,8 @@ module load samtools/1.19
 bgzip -c sv_output/final/sv.vcf > sv_output/final/sv.vcf.gz
 
 tabix -p vcf sv_output/final/sv.vcf.gz 
+
+# slurm-4334473.out
 
 COMMENT
 
