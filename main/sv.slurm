@@ -441,7 +441,7 @@ done
 COMMENT
 
 #=================================================================================
-# merge strains
+# merge genotypes
 #=================================================================================
 
 : << 'COMMENT'
@@ -503,12 +503,73 @@ COMMENT
 module load samtools/1.19
 
 bgzip -c sv_output/final/sv.vcf > sv_output/final/sv.vcf.gz
-
 tabix -p vcf sv_output/final/sv.vcf.gz 
-
 # slurm-4334473.out
 
 COMMENT
+
+#=================================================================================
+# compute sv.vcf stats: indels per chromosome
+#=================================================================================
+
+#: << "COMMENT"
+
+awk -F'\t' '
+  !/^#/ {
+    chrom=$1
+    ref=length($4)
+    alt=length($5)
+    if (alt < ref) {
+      deletions[chrom]++
+    } else if (alt > ref) {
+      insertions[chrom]++
+    }
+  }
+  END {
+    print "Chromosome\tInsertions\tDeletions"
+    for (c in insertions) {
+      print c "\t" insertions[c] "\t" (deletions[c] ? deletions[c] : 0)
+    }
+    for (c in deletions) {
+      if (!(c in insertions)) {
+        print c "\t0\t" deletions[c]
+      }
+    }
+  }' sv_output/final/sv.vcf > sv_output/final/sv_stats_indels_per_chrom.txt
+
+#COMMENT
+
+#=================================================================================
+# compute sv.vcf stats: indels length per chromosome
+#=================================================================================
+
+#: << "COMMENT"
+
+awk '
+BEGIN {
+  print "Chromosome\tPosition\tType_of_Variant\tLength"
+}
+{
+  ref_len = length($4)
+  alt_len = length($5)
+  if (alt_len > ref_len) {
+    type = "Insertion"
+    len = alt_len - ref_len
+  } else if (alt_len < ref_len) {
+    type = "Deletion"
+    len = ref_len - alt_len
+  } else {
+    next
+  }
+  print $1, $2, type, len
+}' sv_output/final/sv.vcf > sv_output/final/sv_stats_indels_len_per_chrom.txt
+
+#COMMENT
+
+#=================================================================================
+#
+#=================================================================================
+
 
 #=================================================================================
 #
