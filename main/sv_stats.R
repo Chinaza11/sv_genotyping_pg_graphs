@@ -57,7 +57,7 @@ df <- data.frame(
 )
 
 # Violin plot
-ggplot(df, aes(x = Chromosome, y = Length, fill = Type_of_Variant)) +
+ggplot(df, aes(x = Chromosome, y = log10(Length), fill = Type_of_Variant)) +
   geom_violin(position = position_dodge(width = 0.9), trim = FALSE, alpha = 0.7) +
   geom_boxplot(position = position_dodge(width = 0.9), width = 0.2, outlier.shape = NA) +
   labs(title = "Distribution of Variant Lengths by Chromosome",
