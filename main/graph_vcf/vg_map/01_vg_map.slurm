@@ -4,7 +4,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=30
 #SBATCH --time=10-00:00:00
-#SBATCH --mem=60GB
+#SBATCH --mem=500GB
 #SBATCH --mail-user=cnnamdi@charlotte.edu
 #SBATCH --mail-type=ALL
 
@@ -43,7 +43,7 @@ tabix -p vcf input/sv_2.vcf.gz
 COMMENT
 
 #=================================================================================
-#
+# create and index variation graph
 #=================================================================================
 
 : << 'COMMENT'
@@ -63,7 +63,7 @@ vg autoindex --workflow map \
 COMMENT
 
 #=================================================================================
-#
+# map reads to graph
 #=================================================================================
 
 : << 'COMMENT'
@@ -82,7 +82,9 @@ map_reads() {
 	echo $read_2
         echo "--------------------------------------"
 	
-	vg map -t 60 -x index.xg -g index.gcsa -f $1 -f $read_2 \
+	vg map -t 60 -x graph_n_index/index.xg \
+		-g graph_n_index/index.gcsa \
+		-f $1 -f $read_2 \
 		> mappings/$read_name.mapped.gam	
 }
 
@@ -105,7 +107,7 @@ reads_path="/projects/cooper_research1/Wild_Sorghum_WGS"
 COMMENT
 
 #=================================================================================
-#
+# stats of alignment (gam file)
 #=================================================================================
 
 : << 'COMMENT'
@@ -113,7 +115,7 @@ COMMENT
 module load anaconda3/2023.09
 conda activate vg_env
 
-count_mapped_reads() {
+vg_stats() {
         echo ""
         echo "--------------------------------------"
         sample=$(basename $1 | awk -F'.' '{print $1}')
@@ -122,63 +124,30 @@ count_mapped_reads() {
         echo $1
         echo "--------------------------------------"
 
-	vg view -a $1 | jq -rc '[.name, if .mapping_quality == null then 0 else .mapping_quality end ] | @tsv' | awk '$2>0' | wc -l > mappings/stats/$sample.tsv
-	vg view -a $1 | jq -rc '[.name, if .mapping_quality == null then 0 else .mapping_quality end ] | @tsv' | awk '$2>=10' | wc -l >> mappings/stats/$sample.tsv
-	vg view -a $1 | jq -rc '[.name, if .mapping_quality == null then 0 else .mapping_quality end ] | @tsv' | awk '$2>=20' | wc -l >> mappings/stats/$sample.tsv
-	vg view -a $1 | jq -rc '[.name, if .mapping_quality == null then 0 else .mapping_quality end ] | @tsv' | awk '$2>=30' | wc -l >> mappings/stats/$sample.tsv
-	vg view -a $1 | jq -rc '[.name, if .mapping_quality == null then 0 else .mapping_quality end ] | @tsv' | awk '$2>=40' | wc -l >> mappings/stats/$sample.tsv
-	vg view -a $1 | jq -rc '[.name, if .mapping_quality == null then 0 else .mapping_quality end ] | @tsv' | awk '$2>=50' | wc -l >> mappings/stats/$sample.tsv
-	vg view -a $1 | jq -rc '[.name, if .mapping_quality == null then 0 else .mapping_quality end ] | @tsv' | awk '$2>=60' | wc -l >> mappings/stats/$sample.tsv
-	vg view -a $1 | jq -rc '[.name, if .identity == null then 0 else .identity end ] | @tsv' | awk '$2>=1' | wc -l >> mappings/stats/$sample.tsv
-	vg view -a $1 | jq -rc '[.name, if .identity == null then 0 else .identity end ] | @tsv' | awk '$2>=0.9' | wc -l >> mappings/stats/$sample.tsv
-	vg view -a $1 | jq -rc '[.name, if .identity == null then 0 else .identity end ] | @tsv' | awk '$2>=0.5' | wc -l >> mappings/stats/$sample.tsv
-	vg view -a $1 | wc -l >> mappings/stats/$sample.tsv
+        vg stats -a $1
 }
 
-export -f count_mapped_reads
+export -f vg_stats
 
-find mappings/*.gam | parallel -j 12 --joblog $pjl/count_mapped_reads.txt count_mapped_reads {}
-
-#slurm-4303947.out
-
-COMMENT
-
-#=================================================================================
-#
-#=================================================================================
-
-: << 'COMMENT'
-
-for file in mappings/stats/*.tsv
-do
-	echo ""
-        echo "--------------------------------------"
-        sample=$(basename $file | awk -F'.' '{print $1}')
-
-        echo $sample
-        echo $file
-        echo "--------------------------------------"
-
-	cat $file | tr '\n' '\t' >> mappings/stats/all.tsv
-	echo -ne "construct\t" >> mappings/stats/all.tsv
-	grep $sample mappings/stats/samples.txt | awk '{print $3}' >> mappings/stats/all.tsv
-
-done
-
-#slurm-_______.out
+find mappings/*gam | parallel -j 14 --joblog $pjl/vg_stats.txt vg_stats {}
+#slurm-4593277.out
 
 COMMENT
 
 #=================================================================================
-#
+# SV calling and genotyping
 #=================================================================================
 
-: << 'COMMENT'
+#: << 'COMMENT'
 
 module load anaconda3/2023.09
 conda activate vg_env
 
-sort_gam() {
+# compute the snarls
+#vg snarls graph_n_index/index.xg > graph_n_index/index.snarls
+# slurm-4593305.out
+
+vg_call() {
         echo ""
         echo "--------------------------------------"
         sample=$(basename $1 | awk -F'.' '{print $1}')
@@ -187,16 +156,35 @@ sort_gam() {
         echo $1
         echo "--------------------------------------"
 
-	vg gamsort -t 10 \
-		-i mappings_sorted/$sample.mapped.sorted.gam.gai $1 \
-		> mappings_sorted/$sample.mapped.sorted.gam
+        # compute the read support
+	# ignore reads with MAPQ < 5 and positions with base quality < 5
+        vg pack -x graph_n_index/index.xg \
+                -g $1 \
+                -o vg_call/$sample.pack \
+                -Q 5 \
+                -t 10
+
+        vg call graph_n_index/index.xg \
+                -r graph_n_index/index.snarls \
+                -k vg_call/$sample.pack \
+                -s $sample \
+                -t 10 \
+                > vg_call/$sample.vcf
 }
 
-export -f sort_gam
+export -f vg_call
 
-find mappings/*.gam | parallel -j 4 --joblog $pjl/sort_gam.txt sort_gam {}
+find mappings/*gam | parallel -j 14 --joblog $pjl/vg_call.txt vg_call {}
+#slurm-4593327.out
 
-#slurm-4303978.out
+#COMMENT
+
+#=================================================================================
+#
+#=================================================================================
+
+: << 'COMMENT'
+
 
 COMMENT
 
