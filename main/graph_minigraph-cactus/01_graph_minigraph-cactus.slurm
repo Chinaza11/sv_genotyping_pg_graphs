@@ -1,6 +1,6 @@
 #! /bin/bash
 
-#SBATCH --partition=Draco
+#SBATCH --partition=Orion
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=30
 #SBATCH --time=10-00:00:00
@@ -16,6 +16,9 @@ echo "Node List   : $SLURM_JOB_NODELIST"
 echo "Num Tasks   : $SLURM_NTASKS total [$SLURM_NNODES nodes @ $SLURM_CPUS_ON_NODE CPUs/node]"
 echo "======================================================"
 echo ""
+
+module load parallel/20240422
+pjl="parallel_jobs_log"
 
 #=================================================================================
 # download and unzip genomes: download interactively in the DTN node
@@ -95,13 +98,15 @@ halStats sorghum-pg/sorghum-pg.full.hal
 COMMENT
 
 #=================================================================================
-# map reads to graph
+# map reads to graph: had to switch to the most recent version of vg (vg 1.65.0)
+# code below will recreate minimizer index (that includes zipcodes) and a new zipcodes file
+# use these newly created files in mapping other reads
 #=================================================================================
 
 : << 'COMMENT'
 
 module load anaconda3/2023.09
-conda activate vg_env
+conda activate vg_env2
 
 map_reads() {
         echo ""
@@ -118,31 +123,64 @@ map_reads() {
                 -m sorghum-pg/sorghum-pg.d2.min \
                 -d sorghum-pg/sorghum-pg.d2.dist \
                 --progress \
-		--fragment-mean 258.681 \
-		--fragment-stdev 104.517 \
                 -t 30 \
-                -f $1 -f $read_2 >mappings_2/$read_name.mapped.gam
+                -f $1 -f $read_2 >mappings/$read_name.mapped.gam
 }
 
 export -f map_reads
 reads_path="/projects/cooper_research1/Wild_Sorghum_WGS"
 
 map_reads $reads_path/Grif16309_1.fastq
-#master.sh was used submit multiple slurm jobs
-#slurm-4659495.out,4659517,4659518,4659519,4659520,4659521,4659516,4659515,4659514,4659513,4659512,4659511,4659509,4659510
-
-#slurm-4659545.out #specified fragment length and stdev
+# slurm-4698163.out
 
 COMMENT
 
 #=================================================================================
-#
+# map other reads to graph: using newly created zipcodes and minimizer index (with zipcodes) files
 #=================================================================================
 
 : << 'COMMENT'
 
 module load anaconda3/2023.09
-conda activate vg_env
+conda activate vg_env2
+
+map_reads() {
+        echo ""
+        echo "--------------------------------------"
+        read_name=$(basename $1 | awk -F'_' '{print $1}')
+        read_2=$(echo $1 | sed 's/_1/_2/')
+
+        echo $read_name
+        echo $1
+        echo $read_2
+        echo "--------------------------------------"
+
+        vg giraffe -Z sorghum-pg/sorghum-pg.d2.gbz \
+		-m sorghum-pg/sorghum-pg.d2.shortread.withzip.min \
+                -z sorghum-pg/sorghum-pg.d2.shortread.zipcodes \
+                -d sorghum-pg/sorghum-pg.d2.dist \
+                --progress \
+                -t 30 \
+                -f $1 -f $read_2 >mappings/$read_name.mapped.gam
+}
+
+export -f map_reads
+reads_path="/projects/cooper_research1/Wild_Sorghum_WGS"
+
+map_reads $reads_path/Grif16309_1.fastq
+#master.sh was used to submit multiple slurm jobs
+# slurm-4698176.out,4698177,4698178,4698179,4698180,4698181,4698182,4698183,4698184,4698185,4698186,4698187,4698175,4698163
+
+COMMENT
+
+#=================================================================================
+# stats of alignments (gam file)
+#=================================================================================
+
+: << 'COMMENT'
+
+module load anaconda3/2023.09
+conda activate vg_env2
 
 vg_stats() {
         echo ""
@@ -158,17 +196,55 @@ vg_stats() {
 
 export -f vg_stats
 
-vg_stats mappings_2/Grif16309.mapped.gam
-
-
-#find mappings/*gam | parallel -j 7 --joblog $pjl/vg_stats.txt vg_stats {}
-# slurm-4659544.out, 
+find mappings/*gam | parallel -j 7 --joblog $pjl/vg_stats.txt vg_stats {}
+# slurm-___________.out 
 
 COMMENT
 
 #=================================================================================
-#
+# SV calling and genotyping
 #=================================================================================
+
+: << 'COMMENT'
+
+module load anaconda3/2023.09
+conda activate vg_env2
+
+# compute the snarls
+vg snarls sorghum-pg/sorghum-pg.d2.gbz > sorghum-pg/sorghum-pg.d2.snarls
+# slurm-___________.out
+
+
+vg_call() {
+        echo ""
+        echo "--------------------------------------"
+        sample=$(basename $1 | awk -F'.' '{print $1}')
+
+        echo $sample
+        echo $1
+        echo "--------------------------------------"
+
+        # compute the read support
+        vg pack -x sorghum-pg/sorghum-pg.d2.gbz \
+                -g $1 \
+                -o vg_call/$sample.pack \
+                -Q 5 \
+                -t 10
+
+        vg call sorghum-pg/sorghum-pg.d2.gbz \
+                -r sorghum-pg/sorghum-pg.d2.snarls \
+                -k vg_call/$sample.pack \
+                -s $sample \
+                -t 10 \
+                > vg_call/$sample.vcf
+}
+
+export -f vg_call
+
+find mappings/*gam | parallel -j 6 --joblog $pjl/vg_call.txt vg_call {}
+#slurm-_________.out
+
+COMMENT
 
 #=================================================================================
 #
