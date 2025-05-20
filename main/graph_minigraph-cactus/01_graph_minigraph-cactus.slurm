@@ -196,8 +196,8 @@ vg_stats() {
 
 export -f vg_stats
 
-find mappings/*gam | parallel -j 7 --joblog $pjl/vg_stats.txt vg_stats {}
-# slurm-___________.out 
+find mappings/*gam | parallel -j 14 --joblog $pjl/vg_stats.txt vg_stats {}
+# slurm-4699086.out
 
 COMMENT
 
@@ -211,9 +211,8 @@ module load anaconda3/2023.09
 conda activate vg_env2
 
 # compute the snarls
-vg snarls sorghum-pg/sorghum-pg.d2.gbz > sorghum-pg/sorghum-pg.d2.snarls
-# slurm-___________.out
-
+#vg snarls sorghum-pg/sorghum-pg.d2.gbz > sorghum-pg/sorghum-pg.d2.snarls
+# slurm-4699090.out
 
 vg_call() {
         echo ""
@@ -229,20 +228,20 @@ vg_call() {
                 -g $1 \
                 -o vg_call/$sample.pack \
                 -Q 5 \
-                -t 10
+                -t 20
 
         vg call sorghum-pg/sorghum-pg.d2.gbz \
                 -r sorghum-pg/sorghum-pg.d2.snarls \
                 -k vg_call/$sample.pack \
                 -s $sample \
-                -t 10 \
+                -t 20 \
                 > vg_call/$sample.vcf
 }
 
 export -f vg_call
 
-find mappings/*gam | parallel -j 6 --joblog $pjl/vg_call.txt vg_call {}
-#slurm-_________.out
+find mappings/*gam | parallel -j 14 --joblog $pjl/vg_call.txt vg_call {}
+#slurm-4699097.out
 
 COMMENT
 
