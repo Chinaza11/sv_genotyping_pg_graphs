@@ -2,9 +2,9 @@
 
 #SBATCH --partition=Orion
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=30
+#SBATCH --cpus-per-task=10
 #SBATCH --time=10-00:00:00
-#SBATCH --mem=300GB
+#SBATCH --mem=50GB
 #SBATCH --mail-user=cnnamdi@charlotte.edu
 #SBATCH --mail-type=ALL
 
@@ -98,15 +98,17 @@ halStats sorghum-pg/sorghum-pg.full.hal
 COMMENT
 
 #=================================================================================
+# activate conda environment
+#=================================================================================
+
+module load anaconda3/2023.09
+conda activate vg_env2
+
+#=================================================================================
 # map reads to graph: had to switch to the most recent version of vg (vg 1.65.0)
 # code below will recreate minimizer index (that includes zipcodes) and a new zipcodes file
 # use these newly created files in mapping other reads
 #=================================================================================
-
-: << 'COMMENT'
-
-module load anaconda3/2023.09
-conda activate vg_env2
 
 map_reads() {
         echo ""
@@ -127,28 +129,30 @@ map_reads() {
                 -f $1 -f $read_2 >mappings/$read_name.mapped.gam
 }
 
-export -f map_reads
-reads_path="/projects/cooper_research1/Wild_Sorghum_WGS"
-
-map_reads $reads_path/Grif16309_1.fastq
+#reads_path="/projects/cooper_research1/Wild_Sorghum_WGS"
+#map_reads $reads_path/Grif16309_1.fastq
 # slurm-4698163.out
 
-COMMENT
-
 #=================================================================================
-# map other reads to graph: using newly created zipcodes and minimizer index (with zipcodes) files
+# function for mapping other reads to graph:
+#	using the newly created zipcodes and minimizer index (with zipcodes) files
 #=================================================================================
 
-: << 'COMMENT'
-
-module load anaconda3/2023.09
-conda activate vg_env2
-
-map_reads() {
+map_reads2() {
         echo ""
         echo "--------------------------------------"
         read_name=$(basename $1 | awk -F'_' '{print $1}')
-        read_2=$(echo $1 | sed 's/_1/_2/')
+
+	if [[ "$1" == *_1.fastq || "$1" == *_1.fastq.gz ]]; then
+		read_name=$(basename $1 | awk -F'_' '{print $1}')
+	        read_2=$(echo $1 | sed 's/_1/_2/')
+	elif [[ "$1" == *_R1.fastq || "$1" == *_R1.fastq.gz ]]; then
+		read_name=$(basename $1 | awk -F'.' '{print $1}' | sed 's/_R1//')
+		read_2=$(echo "$1" | sed 's/_R1/_R2/')
+	else
+		echo "Unrecognized read 1 format: $1" >&2
+		return 1
+	fi
 
         echo $read_name
         echo $1
@@ -161,26 +165,25 @@ map_reads() {
                 -d sorghum-pg/sorghum-pg.d2.dist \
                 --progress \
                 -t 30 \
-                -f $1 -f $read_2 >mappings/$read_name.mapped.gam
+                -f $1 -f $read_2 >$2/$read_name.mapped.gam
 }
 
-export -f map_reads
-reads_path="/projects/cooper_research1/Wild_Sorghum_WGS"
+export -f map_reads2
 
-map_reads $reads_path/Grif16309_1.fastq
+#=================================================================================
+# map other Wild_Sorghum_WGS reads to graph using map_read2 function
+#=================================================================================
+
+#reads_path="/projects/cooper_research1/Wild_Sorghum_WGS"
+#map_reads2 $reads_path/Grif16309_1.fastq "mappings"
+
 #master.sh was used to submit multiple slurm jobs
 # slurm-4698176.out,4698177,4698178,4698179,4698180,4698181,4698182,4698183,4698184,4698185,4698186,4698187,4698175,4698163
 
-COMMENT
 
 #=================================================================================
-# stats of alignments (gam file)
+# stats of alignments (gam file) function
 #=================================================================================
-
-: << 'COMMENT'
-
-module load anaconda3/2023.09
-conda activate vg_env2
 
 vg_stats() {
         echo ""
@@ -196,19 +199,16 @@ vg_stats() {
 
 export -f vg_stats
 
-find mappings/*gam | parallel -j 14 --joblog $pjl/vg_stats.txt vg_stats {}
+#=================================================================================
+# stats of alignments (gam file): Wild_Sorghum_WGS
+#=================================================================================
+
+#find mappings/*gam | parallel -j 14 --joblog $pjl/vg_stats.txt vg_stats {}
 # slurm-4699086.out
 
-COMMENT
-
 #=================================================================================
-# SV calling and genotyping
+# SV calling and genotyping function
 #=================================================================================
-
-: << 'COMMENT'
-
-module load anaconda3/2023.09
-conda activate vg_env2
 
 # compute the snarls
 #vg snarls sorghum-pg/sorghum-pg.d2.gbz > sorghum-pg/sorghum-pg.d2.snarls
@@ -226,24 +226,161 @@ vg_call() {
         # compute the read support
         vg pack -x sorghum-pg/sorghum-pg.d2.gbz \
                 -g $1 \
-                -o vg_call/$sample.pack \
+                -o $2/$sample.pack \
                 -Q 5 \
                 -t 20
 
         vg call sorghum-pg/sorghum-pg.d2.gbz \
                 -r sorghum-pg/sorghum-pg.d2.snarls \
-                -k vg_call/$sample.pack \
+                -k $2/$sample.pack \
                 -s $sample \
                 -t 20 \
-                > vg_call/$sample.vcf
+                > $2/$sample.vcf
 }
 
 export -f vg_call
 
-find mappings/*gam | parallel -j 14 --joblog $pjl/vg_call.txt vg_call {}
+#=================================================================================
+# SV calling and genotyping: Wild_Sorghum_WGS
+#=================================================================================
+
+#find mappings/*gam | parallel -j 14 --joblog $pjl/vg_call.txt vg_call {} "vg_call"
 #slurm-4699097.out
 
+#=================================================================================
+#=================================================================================
+#=================================================================================
+
+#=================================================================================
+# map TERRA_RAW reads to graph using map_read2 function
+#=================================================================================
+
+#reads_path="/projects/cooper_research1/TERRA_RAW"
+#map_reads2 $reads_path/placeholder.fastq.gz "mappings_terra_raw"
+
+#master.sh was used to submit multiple slurm jobs
+# slurm-_____.out, _____________________________________________________________________________________________
+
+#=================================================================================
+# investigate the warnings in the terra_raw mapping files
+#=================================================================================
+
+: << 'COMMENT'
+
+for file in slurm_log/mapping_terra_raw/*;
+do
+        echo "------------------------------------------"
+        if grep -qi "warning" $file; then
+                echo $file
+                grep -i "warning" $file
+        fi
+done
+
 COMMENT
+
+# slurm-4718422.out
+# grep "/slurm-4701" slurm-4718422.out | wc
+# 196/383 files have warnings
+
+: << 'COMMENT'
+
+for file in slurm_log/mapping_terra_raw/*;
+do
+        echo "------------------------------------------"
+        if grep -qi "warning\[vg::Watchdog\]" $file; then
+                echo $file
+                grep -i "warning\[vg::Watchdog\]" $file
+        fi
+done
+
+COMMENT
+
+# slurm-4718428.out
+# grep "/slurm-4701" slurm-4718428.out | wc
+# 40/383 files have "warning\[vg::Watchdog\]"
+
+: << 'COMMENT'
+
+for file in slurm_log/mapping_terra_raw/*;
+do
+	echo "------------------------------------------"
+	if grep -qi "Encountered 100000 ambiguously-paired reads before finding enough" $file; then
+		echo $file
+		grep -i "Encountered 100000 ambiguously-paired reads before finding enough" $file
+	fi
+done
+
+COMMENT
+
+# slurm-4718433.out
+# grep "/slurm-4701" slurm-4718433.out | wc
+# 12/383 files have "Encountered 100000 ambiguously-paired reads before finding enough"
+
+: << 'COMMENT'
+
+for file in slurm_log/mapping_terra_raw/*;
+do
+        echo "------------------------------------------"
+        if grep -qi "Refusing to perform too-large rescue alignment" $file; then
+                echo $file
+                grep -i "Refusing to perform too-large rescue alignment" $file
+        fi
+done
+
+COMMENT
+
+# slurm-4718434.out
+# grep "/slurm-4701" slurm-4718434.out | wc
+# 165/383 files have "Refusing to perform too-large rescue alignment"
+
+
+#=================================================================================
+# stats of alignments (gam file): TERRA_RAW
+# uncomment vg_stats function above
+#=================================================================================
+
+#find mappings_terra_raw/*gam | parallel -j 39 --joblog $pjl/vg_stats_terra_raw.txt vg_stats {}
+# slurm-_________.out
+
+#=================================================================================
+# SV calling and genotyping: TERRA_RAW
+#=================================================================================
+
+#find mappings_terra_raw/*gam | parallel -j 39 --joblog $pjl/vg_call_terra_raw.txt vg_call {} "vg_call_terra_raw"
+#slurm-_______.out
+
+#=================================================================================
+#
+#=================================================================================
+
+
+
+#=================================================================================
+#=================================================================================
+#=================================================================================
+
+
+
+#=================================================================================
+#
+#=================================================================================
+
+#=================================================================================
+#
+#=================================================================================
+
+#=================================================================================
+#
+#=================================================================================
+
+#=================================================================================
+#
+#=================================================================================
+
+
+#=================================================================================
+#
+#=================================================================================
 
 #=================================================================================
 #
