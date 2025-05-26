@@ -2,9 +2,9 @@
 
 #SBATCH --partition=Orion
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=10
+#SBATCH --cpus-per-task=60
 #SBATCH --time=10-00:00:00
-#SBATCH --mem=50GB
+#SBATCH --mem=700GB
 #SBATCH --mail-user=cnnamdi@charlotte.edu
 #SBATCH --mail-type=ALL
 
@@ -175,11 +175,10 @@ export -f map_reads2
 #=================================================================================
 
 #reads_path="/projects/cooper_research1/Wild_Sorghum_WGS"
-#map_reads2 $reads_path/Grif16309_1.fastq "mappings"
+#map_reads2 $reads_path/Grif16309_1.fastq "mappings_wild_sorghum_wgs"
 
 #master.sh was used to submit multiple slurm jobs
 # slurm-4698176.out,4698177,4698178,4698179,4698180,4698181,4698182,4698183,4698184,4698185,4698186,4698187,4698175,4698163
-
 
 #=================================================================================
 # stats of alignments (gam file) function
@@ -203,7 +202,8 @@ export -f vg_stats
 # stats of alignments (gam file): Wild_Sorghum_WGS
 #=================================================================================
 
-#find mappings/*gam | parallel -j 14 --joblog $pjl/vg_stats.txt vg_stats {}
+#find mappings_wild_sorghum_wgs/*gam \
+#	| parallel -j 14 --joblog $pjl/vg_stats_wild_sorghum_wgs.txt vg_stats {}
 # slurm-4699086.out
 
 #=================================================================================
@@ -244,7 +244,9 @@ export -f vg_call
 # SV calling and genotyping: Wild_Sorghum_WGS
 #=================================================================================
 
-#find mappings/*gam | parallel -j 14 --joblog $pjl/vg_call.txt vg_call {} "vg_call"
+#find mappings_wild_sorghum_wgs/*gam \
+#	| parallel -j 14 --joblog $pjl/vg_call_wild_sorghum_wgs.txt vg_call {} "vg_call_wild_sorghum_wgs"
+
 #slurm-4699097.out
 
 #=================================================================================
@@ -259,94 +261,58 @@ export -f vg_call
 #map_reads2 $reads_path/placeholder.fastq.gz "mappings_terra_raw"
 
 #master.sh was used to submit multiple slurm jobs
-# slurm-_____.out, _____________________________________________________________________________________________
+# slurm_log/mapping_terra_raw/
 
 #=================================================================================
 # investigate the warnings in the terra_raw mapping files
 #=================================================================================
 
-: << 'COMMENT'
+search_logs() {
+    local pattern="$1"
+    local label="$2"
 
-for file in slurm_log/mapping_terra_raw/*;
-do
-        echo "------------------------------------------"
-        if grep -qi "warning" $file; then
-                echo $file
-                grep -i "warning" $file
+    echo "===== Searching for: $label ====="
+    match_count=0
+    total_files=0
+
+    for file in slurm_log/mapping_terra_raw/*; do
+        ((total_files++))
+        if grep -qi "$pattern" "$file"; then
+            echo "------------------------------------------"
+            echo "$file"
+            grep -i "$pattern" "$file"
+            ((match_count++))
         fi
-done
+    done
 
-COMMENT
+    echo -e "\n$match_count/$total_files files contain: \"$label\"\n"
+}
 
-# slurm-4718422.out
-# grep "/slurm-4701" slurm-4718422.out | wc
-# 196/383 files have warnings
+#search_logs "warning" "warning"
+# slurm-4719526.out ==> 196/383 files have warnings
 
-: << 'COMMENT'
+#search_logs "warning\[vg::Watchdog\]" "warning[vg::Watchdog]"
+# slurm-4719528.out ==> 40/383 files have warnings
 
-for file in slurm_log/mapping_terra_raw/*;
-do
-        echo "------------------------------------------"
-        if grep -qi "warning\[vg::Watchdog\]" $file; then
-                echo $file
-                grep -i "warning\[vg::Watchdog\]" $file
-        fi
-done
+#search_logs "Encountered 100000 ambiguously-paired reads before finding enough" "ambiguous paired reads warning"
+# slurm-4719533.out ==> 12/383 files have warnings
 
-COMMENT
-
-# slurm-4718428.out
-# grep "/slurm-4701" slurm-4718428.out | wc
-# 40/383 files have "warning\[vg::Watchdog\]"
-
-: << 'COMMENT'
-
-for file in slurm_log/mapping_terra_raw/*;
-do
-	echo "------------------------------------------"
-	if grep -qi "Encountered 100000 ambiguously-paired reads before finding enough" $file; then
-		echo $file
-		grep -i "Encountered 100000 ambiguously-paired reads before finding enough" $file
-	fi
-done
-
-COMMENT
-
-# slurm-4718433.out
-# grep "/slurm-4701" slurm-4718433.out | wc
-# 12/383 files have "Encountered 100000 ambiguously-paired reads before finding enough"
-
-: << 'COMMENT'
-
-for file in slurm_log/mapping_terra_raw/*;
-do
-        echo "------------------------------------------"
-        if grep -qi "Refusing to perform too-large rescue alignment" $file; then
-                echo $file
-                grep -i "Refusing to perform too-large rescue alignment" $file
-        fi
-done
-
-COMMENT
-
-# slurm-4718434.out
-# grep "/slurm-4701" slurm-4718434.out | wc
-# 165/383 files have "Refusing to perform too-large rescue alignment"
-
+#search_logs "Refusing to perform too-large rescue alignment" "too-large rescue alignment warning"
+# slurm-4719535.out ==> 165/383 files have warnings
 
 #=================================================================================
 # stats of alignments (gam file): TERRA_RAW
 # uncomment vg_stats function above
 #=================================================================================
 
-#find mappings_terra_raw/*gam | parallel -j 39 --joblog $pjl/vg_stats_terra_raw.txt vg_stats {}
-# slurm-_________.out
+#find mappings_terra_raw/*gam | parallel -j 20 --joblog $pjl/vg_stats_terra_raw.txt vg_stats {}
+# slurm-4719547.out
 
 #=================================================================================
 # SV calling and genotyping: TERRA_RAW
 #=================================================================================
 
-#find mappings_terra_raw/*gam | parallel -j 39 --joblog $pjl/vg_call_terra_raw.txt vg_call {} "vg_call_terra_raw"
+#find mappings_terra_raw/*gam | parallel -j 20 --joblog $pjl/vg_call_terra_raw.txt vg_call {} "vg_call_terra_raw"
 #slurm-_______.out
 
 #=================================================================================
