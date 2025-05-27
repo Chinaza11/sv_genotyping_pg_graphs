@@ -2,9 +2,9 @@
 
 #SBATCH --partition=Orion
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=60
+#SBATCH --cpus-per-task=20
 #SBATCH --time=10-00:00:00
-#SBATCH --mem=700GB
+#SBATCH --mem=200GB
 #SBATCH --mail-user=cnnamdi@charlotte.edu
 #SBATCH --mail-type=ALL
 
@@ -105,6 +105,7 @@ module load anaconda3/2023.09
 conda activate vg_env2
 
 #=================================================================================
+# function:
 # map reads to graph: had to switch to the most recent version of vg (vg 1.65.0)
 # code below will recreate minimizer index (that includes zipcodes) and a new zipcodes file
 # use these newly created files in mapping other reads
@@ -171,7 +172,7 @@ map_reads2() {
 export -f map_reads2
 
 #=================================================================================
-# map other Wild_Sorghum_WGS reads to graph using map_read2 function
+# map other Wild_Sorghum_WGS reads to graph using map_read2
 #=================================================================================
 
 #reads_path="/projects/cooper_research1/Wild_Sorghum_WGS"
@@ -181,7 +182,7 @@ export -f map_reads2
 # slurm-4698176.out,4698177,4698178,4698179,4698180,4698181,4698182,4698183,4698184,4698185,4698186,4698187,4698175,4698163
 
 #=================================================================================
-# stats of alignments (gam file) function
+# function: stats of alignments (gam file)
 #=================================================================================
 
 vg_stats() {
@@ -207,7 +208,7 @@ export -f vg_stats
 # slurm-4699086.out
 
 #=================================================================================
-# SV calling and genotyping function
+# function: SV calling and genotyping
 #=================================================================================
 
 # compute the snarls
@@ -250,6 +251,126 @@ export -f vg_call
 #slurm-4699097.out
 
 #=================================================================================
+# function: filter VCF file
+# exclude rows with lowdepth and lowad (keep only rows with PASS in the FILTER column)
+#=================================================================================
+
+filter_vcf() {
+	echo ""
+        echo "--------------------------------------"
+        sample=$(basename $1 | awk -F'.' '{print $1}')
+
+        echo $sample
+        echo $1
+        echo "--------------------------------------"
+
+	awk 'BEGIN {OFS = "\t"}
+		/^#/ {print; next}
+		$7 == "PASS" {
+			keep = (length($4) > 50)
+			split($5, alts, ",")
+
+			for (i in alts) {
+				if (length(alts[i]) > 50) {
+					keep = 1
+					break
+				}
+			}
+
+			if (keep) {
+				print
+			}
+	}' $1 > $2/$sample.filtered.vcf
+
+}
+
+export -f filter_vcf
+
+#=================================================================================
+# filter VCF files: Wild_Sorghum_WGS
+#=================================================================================
+
+#find vg_call_wild_sorghum_wgs/*vcf \
+#       | parallel -j 14 --joblog $pjl/filter_vcf_wild_sorghum_wgs.txt filter_vcf {} "vg_call_wild_sorghum_wgs"
+
+#slurm-4725378.out
+
+#=================================================================================
+# function: compute VCF file stats, indels per chromosome 
+#=================================================================================
+
+indels_per_chr() {
+        echo ""
+        echo "--------------------------------------"
+        sample=$(basename $1 | awk -F'.' '{print $1}')
+
+        echo $sample
+        echo $1
+        echo "--------------------------------------"
+
+	awk -F'\t' '
+		!/^#/ {
+			chrom=$1
+			ref=length($4)
+			alt=length($5)
+			if (alt < ref) {
+				deletions[chrom]++
+			} else if (alt > ref) {
+				insertions[chrom]++
+			}
+		}
+		END {
+			print "Chromosome\tInsertions\tDeletions"
+			for (c in insertions) {
+				print c "\t" insertions[c] "\t" (deletions[c] ? deletions[c] : 0)
+			}
+			for (c in deletions) {
+				if (!(c in insertions)) {
+					print c "\t0\t" deletions[c]
+				}
+			}
+		}' $1 >> $2/vcf_stats/indels_per_chrom.txt
+}
+
+#=================================================================================
+# compute VCF file stats, indels per chromosome: Wild_Sorghum_WGS
+#================================================================================
+
+#: << "COMMENT"
+
+for file in vg_call_wild_sorghum_wgs/*filtered.vcf;
+do
+	indels_per_chr $file "vg_call_wild_sorghum_wgs/"
+done
+
+#COMMENT
+
+#slurm-________.out
+
+#=================================================================================
+# function: compute VCF file stats, indels per chromosome
+#=================================================================================
+
+indels_len_per_chr() {
+        echo ""
+        echo "--------------------------------------"
+        sample=$(basename $1 | awk -F'.' '{print $1}')
+
+        echo $sample
+        echo $1
+        echo "--------------------------------------"
+
+        grep -E "^#|PASS" $1 > $2/$sample.filtered.vcf
+
+}
+
+#=================================================================================
+# compute VCF file stats, indels per chromosome: Wild_Sorghum_WGS
+#=================================================================================
+
+
+
+#=================================================================================
 #=================================================================================
 #=================================================================================
 
@@ -275,7 +396,7 @@ search_logs() {
     match_count=0
     total_files=0
 
-    for file in slurm_log/mapping_terra_raw/*; do
+    for file in $3; do
         ((total_files++))
         if grep -qi "$pattern" "$file"; then
             echo "------------------------------------------"
@@ -288,13 +409,13 @@ search_logs() {
     echo -e "\n$match_count/$total_files files contain: \"$label\"\n"
 }
 
-#search_logs "warning" "warning"
+#search_logs "warning" "warning" "slurm_log/mapping_terra_raw/*"
 # slurm-4719526.out ==> 196/383 files have warnings
 
-#search_logs "warning\[vg::Watchdog\]" "warning[vg::Watchdog]"
+#search_logs "warning\[vg::Watchdog\]" "warning[vg::Watchdog]" "slurm_log/mapping_terra_raw/*"
 # slurm-4719528.out ==> 40/383 files have warnings
 
-#search_logs "Encountered 100000 ambiguously-paired reads before finding enough" "ambiguous paired reads warning"
+#search_logs "Encountered 100000 ambiguously-paired reads before finding enough" "ambiguous paired reads warning" "slurm_log/mapping_terra_raw/*"
 # slurm-4719533.out ==> 12/383 files have warnings
 
 #search_logs "Refusing to perform too-large rescue alignment" "too-large rescue alignment warning"
@@ -312,37 +433,27 @@ search_logs() {
 # SV calling and genotyping: TERRA_RAW
 #=================================================================================
 
-#find mappings_terra_raw/*gam | parallel -j 20 --joblog $pjl/vg_call_terra_raw.txt vg_call {} "vg_call_terra_raw"
-#slurm-_______.out
+#vg_call mappings_terra_raw/placeholder.mapped.gam "vg_call_terra_raw"
+
+# master.sh was used to submit multiple slurm jobs
+# slurm_log/vg_call_terra_raw/
+
+#=================================================================================
+# inspect TERRA_RAW genotyping results for warning
+#=================================================================================
+
+#search_logs "warning" "warning" "slurm_log/vg_call_terra_raw/*.out"
+# slurm-4724782.out ==> no warnings
+
+#=================================================================================
+#=================================================================================
+#=================================================================================
+
+
 
 #=================================================================================
 #
 #=================================================================================
-
-
-
-#=================================================================================
-#=================================================================================
-#=================================================================================
-
-
-
-#=================================================================================
-#
-#=================================================================================
-
-#=================================================================================
-#
-#=================================================================================
-
-#=================================================================================
-#
-#=================================================================================
-
-#=================================================================================
-#
-#=================================================================================
-
 
 #=================================================================================
 #
