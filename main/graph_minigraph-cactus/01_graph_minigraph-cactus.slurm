@@ -253,35 +253,36 @@ export -f vg_call
 #=================================================================================
 # function: filter VCF file
 # exclude rows with lowdepth and lowad (keep only rows with PASS in the FILTER column)
+# keep rows where difference between the REF and ALT sequence is greater than 50 bp
 #=================================================================================
 
 filter_vcf() {
 	echo ""
-        echo "--------------------------------------"
-        sample=$(basename $1 | awk -F'.' '{print $1}')
+	echo "--------------------------------------"
+	sample=$(basename "$1" | awk -F'.' '{print $1}')
 
-        echo $sample
-        echo $1
-        echo "--------------------------------------"
+	echo "Sample: $sample"
+	echo "File: $1"
+	echo "--------------------------------------"
 
 	awk 'BEGIN {OFS = "\t"}
 		/^#/ {print; next}
 		$7 == "PASS" {
-			keep = (length($4) > 50)
+			ref_len = length($4)
 			split($5, alts, ",")
+			max_alt_len = 0
 
 			for (i in alts) {
-				if (length(alts[i]) > 50) {
-					keep = 1
-					break
+				alt_len = length(alts[i])
+				if (alt_len > max_alt_len) {
+					max_alt_len = alt_len
 				}
 			}
 
-			if (keep) {
+			if ((max_alt_len - ref_len >= 50) || (ref_len - max_alt_len >= 50)) {
 				print
 			}
-	}' $1 > $2/$sample.filtered.vcf
-
+		}' "$1" > "$2/$sample.filtered.vcf"
 }
 
 export -f filter_vcf
@@ -290,10 +291,12 @@ export -f filter_vcf
 # filter VCF files: Wild_Sorghum_WGS
 #=================================================================================
 
+#rm vg_call_wild_sorghum_wgs/*filtered.vcf
+
 #find vg_call_wild_sorghum_wgs/*vcf \
 #       | parallel -j 14 --joblog $pjl/filter_vcf_wild_sorghum_wgs.txt filter_vcf {} "vg_call_wild_sorghum_wgs"
 
-#slurm-4725378.out
+#slurm-_______.out
 
 #=================================================================================
 # function: compute VCF file stats, indels per chromosome 
