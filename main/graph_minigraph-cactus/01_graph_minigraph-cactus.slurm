@@ -303,30 +303,38 @@ indels_per_chr() {
         echo ""
         echo "--------------------------------------"
         sample=$(basename $1 | awk -F'.' '{print $1}')
-
         echo $sample
         echo $1
         echo "--------------------------------------"
 
-	awk -F'\t' '
+	awk -v species="$sample" -F'\t' '
 		!/^#/ {
-			chrom=$1
-			ref=length($4)
-			alt=length($5)
-			if (alt < ref) {
-				deletions[chrom]++
-			} else if (alt > ref) {
-				insertions[chrom]++
+			chrom = $1
+			ref_len = length($4)
+			max_alt_len = 0
+			
+			split($5, alts, ",")
+
+			for (i in alts) {
+				alt_len = length(alts[i])
+				if (alt_len > max_alt_len) {
+					max_alt_len = alt_len
+				}
 			}
+
+			if (max_alt_len > ref_len) {
+				insertions[chrom]++
+			} else if (max_alt_len < ref_len) {
+				deletions[chrom]++
+			}			
 		}
 		END {
-			print "Chromosome\tInsertions\tDeletions"
 			for (c in insertions) {
-				print c "\t" insertions[c] "\t" (deletions[c] ? deletions[c] : 0)
+				print species "\t" c "\t" insertions[c] "\t" (deletions[c] ? deletions[c] : 0)
 			}
 			for (c in deletions) {
 				if (!(c in insertions)) {
-					print c "\t0\t" deletions[c]
+					print species "\t" c "\t0\t" deletions[c]
 				}
 			}
 		}' $1 >> $2/vcf_stats/indels_per_chrom.txt
@@ -336,16 +344,18 @@ indels_per_chr() {
 # compute VCF file stats, indels per chromosome: Wild_Sorghum_WGS
 #================================================================================
 
-#: << "COMMENT"
+: << "COMMENT"
+
+echo -e "Species\tChromosome\tInsertions\tDeletions" > vg_call_wild_sorghum_wgs/vcf_stats/indels_per_chrom.txt
 
 for file in vg_call_wild_sorghum_wgs/*filtered.vcf;
 do
 	indels_per_chr $file "vg_call_wild_sorghum_wgs/"
 done
 
-#COMMENT
+COMMENT
 
-#slurm-________.out
+#slurm-4726694.out
 
 #=================================================================================
 # function: compute VCF file stats, indels per chromosome
