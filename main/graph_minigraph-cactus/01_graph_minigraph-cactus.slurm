@@ -296,7 +296,7 @@ export -f filter_vcf
 #find vg_call_wild_sorghum_wgs/*vcf \
 #       | parallel -j 14 --joblog $pjl/filter_vcf_wild_sorghum_wgs.txt filter_vcf {} "vg_call_wild_sorghum_wgs"
 
-#slurm-_______.out
+#slurm-4736165.out
 
 #=================================================================================
 # function: compute VCF file stats, indels per chromosome 
@@ -358,10 +358,10 @@ done
 
 COMMENT
 
-#slurm-4726694.out
+#slurm-4736174.out
 
 #=================================================================================
-# function: compute VCF file stats, indels per chromosome
+# function: compute VCF file stats, indels len per chromosome
 #=================================================================================
 
 indels_len_per_chr() {
@@ -373,15 +373,49 @@ indels_len_per_chr() {
         echo $1
         echo "--------------------------------------"
 
-        grep -E "^#|PASS" $1 > $2/$sample.filtered.vcf
+	awk 'BEGIN {print "Chromosome\tPosition\tType_of_Variant\tLength"}
+		/^#/ { next } {
+			ref_len = length($4)
+			max_alt_len = 0
 
+                        split($5, alts, ",")
+
+                        for (i in alts) {
+                                alt_len = length(alts[i])
+                                if (alt_len > max_alt_len) {
+                                        max_alt_len = alt_len
+                                }
+                        }
+
+			if (max_alt_len > ref_len) {
+				type = "Insertion"
+				len = max_alt_len - ref_len
+			} else if (max_alt_len < ref_len) {
+				type = "Deletion"
+				len = ref_len - max_alt_len
+			} else {
+				next
+			}
+
+		print $1 "\t" $2 "\t" type "\t" len
+	}' $1 > $2/vcf_stats/$sample.indels_len_per_chrom.txt 
 }
 
 #=================================================================================
-# compute VCF file stats, indels per chromosome: Wild_Sorghum_WGS
+# compute VCF file stats, indels len per chromosome: Wild_Sorghum_WGS
 #=================================================================================
 
+: << "COMMENT"
 
+for file in vg_call_wild_sorghum_wgs/*filtered.vcf;
+do
+
+	indels_len_per_chr $file "vg_call_wild_sorghum_wgs/"	
+done
+
+COMMENT
+
+#slurm-4754514.out
 
 #=================================================================================
 #=================================================================================
