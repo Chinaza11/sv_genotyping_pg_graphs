@@ -4,7 +4,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=20
 #SBATCH --time=10-00:00:00
-#SBATCH --mem=200GB
+#SBATCH --mem=300GB
 #SBATCH --mail-user=cnnamdi@charlotte.edu
 #SBATCH --mail-type=ALL
 
@@ -416,6 +416,62 @@ done
 COMMENT
 
 #slurm-4754514.out
+
+#=================================================================================
+# bgzip filtered VCF files, index them and merge them
+#=================================================================================
+
+: << "COMMENT"
+
+module load samtools/1.19
+
+for file in vg_call_wild_sorghum_wgs/*.filtered.vcf;
+do
+	sample=$(basename $file | awk -F'.' '{print $1}')
+        echo $sample
+	bgzip -c $file > vg_call_wild_sorghum_wgs/$sample.filtered.vcf.gz
+	tabix -p vcf vg_call_wild_sorghum_wgs/$sample.filtered.vcf.gz
+done
+
+files=$(ls vg_call_wild_sorghum_wgs/*filtered.vcf.gz | paste -sd ' ' -)
+echo $files
+
+bcftools merge $files -o vg_call_wild_sorghum_wgs/merged.vcf
+#slurm-4761681.out
+
+COMMENT
+
+#=================================================================================
+# filter merged VCF file and keep only rows with the following genotypes:
+# 0/1, 1/0, 1/1, ./.
+#=================================================================================
+
+: << "COMMENT"
+
+unique_genotypes=$(grep -v '^#' vg_call_wild_sorghum_wgs/merged.vcf | cut -f10- | \
+			tr '\t' '\n' | cut -d ':' -f1 | sort | uniq | paste -sd '|' -)
+
+echo $unique_genotypes
+
+echo ""
+unique_gt_minus_gt_of_interest=$(echo "$unique_genotypes" | \
+				sed -E 's#\|1/0\||\|1/1\||\|0/1\|#\|#g' | \
+				sed -E 's#\./\.\|##g')
+
+echo $unique_gt_minus_gt_of_interest
+
+grep -E -v $unique_gt_minus_gt_of_interest vg_call_wild_sorghum_wgs/merged.vcf \
+	> vg_call_wild_sorghum_wgs/merged.filtered.vcf
+
+
+#inspect unique genotypes in merged.filtered.vcf
+echo ""
+grep -v '^#' vg_call_wild_sorghum_wgs/merged.filtered.vcf | cut -f10- | \
+                        tr '\t' '\n' | cut -d ':' -f1 | sort | uniq | paste -sd ',' -
+
+#slurm-4765254.out
+
+COMMENT
 
 #=================================================================================
 #=================================================================================
