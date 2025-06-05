@@ -418,58 +418,66 @@ COMMENT
 #slurm-4754514.out
 
 #=================================================================================
-# bgzip filtered VCF files, index them and merge them
+# function: bgzip filtered VCF files, index them and merge them
 #=================================================================================
 
-: << "COMMENT"
+bgzip_index_merge(){
+	for file in $1/*.filtered.vcf;
+	do
+		local sample=$(basename $file | awk -F'.' '{print $1}')
+        	echo $sample
+		bgzip -c $file > $1/$sample.filtered.vcf.gz
+		tabix -p vcf $1/$sample.filtered.vcf.gz
+	done
+
+	local files=$(ls $1/*.filtered.vcf.gz | paste -sd ' ' -)
+	echo ""
+	echo $files
+
+	bcftools merge $files -o $1/merged.vcf
+}
+
+#=================================================================================
+# function: filter merged VCF file and keep only rows with 0/1, 1/0, 1/1, ./. genotypes
+#=================================================================================
+
+filter_merged_vcf(){
+	echo ""
+	local unique_genotypes=$(grep -v '^#' $1/merged.vcf | cut -f10- | \
+					tr '\t' '\n' | cut -d ':' -f1 | \
+					sort | uniq | paste -sd '|' -)
+
+	echo $unique_genotypes
+
+	echo ""
+	local unique_gt_minus_gt_of_interest=$(echo "$unique_genotypes" | \
+						sed -E 's#\|1/0\||\|1/1\||\|0/1\|#\|#g' | \
+						sed -E 's#\./\.\|##g')
+
+	echo $unique_gt_minus_gt_of_interest
+
+	grep -E -v $unique_gt_minus_gt_of_interest $1/merged.vcf \
+		> $1/merged.filtered.vcf
+
+	#inspect unique genotypes in merged.filtered.vcf
+	echo ""
+	grep -v '^#' $1/merged.filtered.vcf | cut -f10- | \
+		tr '\t' '\n' | cut -d ':' -f1 | sort | uniq | paste -sd ',' -
+}
+
+#=================================================================================
+# Wild_Sorghum_WGS
+# bgzip filtered VCF files, index them and merge them
+# filter merged VCF file and keep only rows with 0/1, 1/0, 1/1, ./. genotypes
+#=================================================================================~
+
+: << 'COMMENT'
 
 module load samtools/1.19
+bgzip_index_merge "vg_call_wild_sorghum_wgs"
 
-for file in vg_call_wild_sorghum_wgs/*.filtered.vcf;
-do
-	sample=$(basename $file | awk -F'.' '{print $1}')
-        echo $sample
-	bgzip -c $file > vg_call_wild_sorghum_wgs/$sample.filtered.vcf.gz
-	tabix -p vcf vg_call_wild_sorghum_wgs/$sample.filtered.vcf.gz
-done
-
-files=$(ls vg_call_wild_sorghum_wgs/*filtered.vcf.gz | paste -sd ' ' -)
-echo $files
-
-bcftools merge $files -o vg_call_wild_sorghum_wgs/merged.vcf
-#slurm-4761681.out
-
-COMMENT
-
-#=================================================================================
-# filter merged VCF file and keep only rows with the following genotypes:
-# 0/1, 1/0, 1/1, ./.
-#=================================================================================
-
-: << "COMMENT"
-
-unique_genotypes=$(grep -v '^#' vg_call_wild_sorghum_wgs/merged.vcf | cut -f10- | \
-			tr '\t' '\n' | cut -d ':' -f1 | sort | uniq | paste -sd '|' -)
-
-echo $unique_genotypes
-
-echo ""
-unique_gt_minus_gt_of_interest=$(echo "$unique_genotypes" | \
-				sed -E 's#\|1/0\||\|1/1\||\|0/1\|#\|#g' | \
-				sed -E 's#\./\.\|##g')
-
-echo $unique_gt_minus_gt_of_interest
-
-grep -E -v $unique_gt_minus_gt_of_interest vg_call_wild_sorghum_wgs/merged.vcf \
-	> vg_call_wild_sorghum_wgs/merged.filtered.vcf
-
-
-#inspect unique genotypes in merged.filtered.vcf
-echo ""
-grep -v '^#' vg_call_wild_sorghum_wgs/merged.filtered.vcf | cut -f10- | \
-                        tr '\t' '\n' | cut -d ':' -f1 | sort | uniq | paste -sd ',' -
-
-#slurm-4765254.out
+filter_merged_vcf "vg_call_wild_sorghum_wgs"
+#slurm-4783072.out
 
 COMMENT
 
@@ -547,6 +555,38 @@ search_logs() {
 
 #search_logs "warning" "warning" "slurm_log/vg_call_terra_raw/*.out"
 # slurm-4724782.out ==> no warnings
+
+#=================================================================================
+# filter VCF files: TERRA_RAW
+#=================================================================================
+
+: << 'COMMENT'
+
+rm vg_call_terra_raw/*.filtered.vcf
+
+find vg_call_terra_raw/*.vcf \
+       | parallel -j 20 --joblog $pjl/filter_vcf_terra_raw.txt filter_vcf {} "vg_call_terra_raw"
+
+COMMENT
+
+#slurm-4783074.out
+
+#=================================================================================
+# TERRA_RAW
+# bgzip filtered VCF files, index them and merge them
+# filter merged VCF file and keep only rows with 0/1, 1/0, 1/1, ./. genotypes
+#=================================================================================~
+
+: << 'COMMENT'
+
+module load samtools/1.19
+bgzip_index_merge "vg_call_terra_raw"
+
+filter_merged_vcf "vg_call_terra_raw"
+
+COMMENT
+
+#slurm-4783075.out
 
 #=================================================================================
 #=================================================================================
