@@ -1,7 +1,10 @@
-rm(list=ls())
-ls()
+#.libPaths("~/rlibs") #------ in HPC environ: uncomment
 
-setwd("C:/Users/nnamd/Downloads")
+rm(list=ls()) #------ in HPC environ: comment out
+ls() #------ in HPC environ: comment out
+
+setwd("C:/Users/nnamd/Downloads") #------ in HPC environ: comment out
+
 options(stringsAsFactors = FALSE)
 
 # =============================================================================
@@ -14,6 +17,28 @@ read.vcf <- function(file, special.char="##", ...) {
   clean.lines=gsub(my.search.term, "",  all.lines)
   clean.lines=gsub("#CHROM", "CHROM", clean.lines)
   read.table(..., text=paste(clean.lines, collapse="\n"))
+}
+
+
+read.vcf2 <- function(file, special.char = "##", ...) {
+  my.search.term <- paste0("^", special.char)
+  
+  # Read lines and filter out header
+  all.lines <- readLines(file)
+  keep.lines <- all.lines[!grepl(my.search.term, all.lines)]
+  keep.lines <- gsub("^#CHROM", "CHROM", keep.lines)  # fix column header
+  
+  # Write cleaned lines to a temp file
+  temp <- tempfile(fileext = ".vcf")
+  writeLines(keep.lines, temp)
+  
+  # Read using read.table
+  df <- read.table(temp, header = TRUE, ...)
+  
+  # Optionally remove temp file
+  unlink(temp)
+  
+  return(df)
 }
 
 # =============================================================================
@@ -102,12 +127,14 @@ get.plots(ws.wgs.derived.counts,
 # TERRA RAW
 # =============================================================================
 
-tr.my.vcf = read.vcf("tr.merged.filtered.vcf", header=TRUE)
+tr.my.vcf = read.vcf_2("vg_call_terra_raw/merged.filtered.vcf", header=TRUE)
 
 tr.derived.counts = get.derived.counts(tr.my.vcf)
 
 get.plots(tr.derived.counts, 
           tr.my.vcf, 
-          "G:/My Drive/PhD/project/structural_variant_genotyping_with_pangenome_graph/data_analysis/data_and_result/main/graph_minigraph-cactus/tr_obs_afs.png",
-          "G:/My Drive/PhD/project/structural_variant_genotyping_with_pangenome_graph/data_analysis/data_and_result/main/graph_minigraph-cactus/tr_obs_n_exp_afs.png")
+          "vg_call_terra_raw/tr_obs_afs.png",
+          "vg_call_terra_raw/tr_obs_n_exp_afs.png")
 
+df = read.vcf2("simonii-chr1.vcf")
+df2 = read.vcf("simonii-chr1.vcf", header=TRUE)
