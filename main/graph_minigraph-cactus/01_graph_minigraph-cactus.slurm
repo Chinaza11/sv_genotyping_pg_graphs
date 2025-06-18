@@ -589,6 +589,163 @@ COMMENT
 #slurm-4783075.out
 
 #=================================================================================
+# TERRA_RAW: allele frequency spectrum plots
+#=================================================================================
+
+#module load R/4.3.3
+#Rscript afs.R
+
+#slurm-4783168.out
+
+#=================================================================================
+# TERRA_RAW: remove all duplicate rows (not just deduplicating) 
+#=================================================================================
+
+: << 'COMMENT'
+
+awk '
+BEGIN { OFS = "\t" }
+FNR==NR {
+    if ($0 ~ /^#/) {
+        headers[header_count++] = $0
+    } else {
+        key = $1 ":" $2
+        counts[key]++
+    }
+    next
+}
+{
+    if (FNR == 1) {
+        for (i=0; i<header_count; i++) {
+            print headers[i]
+        }
+    }
+    if ($0 !~ /^#/) {
+        key = $1 ":" $2
+        if (counts[key] == 1) {
+            print
+        }
+    }
+}
+' vg_call_terra_raw/merged.filtered.vcf vg_call_terra_raw/merged.filtered.vcf \
+        > vg_call_terra_raw/merged.filtered2.vcf
+
+COMMENT
+
+#=================================================================================
+# TERRA_RAW: replace all occurence of ./. with 0/0
+#=================================================================================
+
+: << 'COMMENT'
+
+awk '{
+  if ($0 ~ /^#/) {
+    print
+  } else {
+    gsub(/\.\/\./, "0/0")
+    print
+  }
+}' vg_call_terra_raw/merged.filtered2.vcf > vg_call_terra_raw/merged.filtered3.vcf
+
+COMMENT
+
+#=================================================================================
+# TERRA_RAW: PCA
+#=================================================================================
+
+: << 'COMMENT'
+
+module load plink/2.00
+
+plink2 \
+	--vcf vg_call_terra_raw/merged.filtered3.vcf \
+	--chr-set 20 no-xy no-mt \
+	--threads 30 \
+	--pca \
+	--out vg_call_terra_raw/plink_result/plink
+
+COMMENT
+
+# slurm-4794119.out
+
+#=================================================================================
+# TERRA_RAW: PCA2
+#=================================================================================
+
+: << 'COMMENT'
+
+module load plink/2.00
+
+# excluding sites with MAF < 0.05
+plink2 \
+        --vcf vg_call_terra_raw/merged.filtered3.vcf \
+	--chr-set 20 no-xy no-mt \
+	--maf 0.05 \
+	--threads 30 \
+	--make-bed \
+        --out vg_call_terra_raw/plink_result2/plink
+
+COMMENT
+
+# slurm-4800351.out
+
+
+: << 'COMMENT'
+
+module load plink/2.00
+
+plink2 \
+        --bfile vg_call_terra_raw/plink_result2/plink \
+        --chr-set 20 no-xy no-mt \
+        --pca \
+        --threads 30 \
+        --out vg_call_terra_raw/plink_result2/plink
+
+COMMENT
+
+# slurm-4800351.out
+
+#=================================================================================
+# TERRA_RAW: PCA3
+#=================================================================================
+
+: << 'COMMENT'
+
+module load plink/2.00
+
+# LD-pruning and excluding sites with MAF < 0.05
+plink2 \
+        --vcf vg_call_terra_raw/merged.filtered3.vcf \
+        --chr-set 20 no-xy no-mt \
+        --maf 0.05 \
+        --threads 30 \
+        --make-bed \
+	--set-all-var-ids @:# \
+	--indep-pairwise 500 50 0.2 \
+        --out vg_call_terra_raw/plink_result3/plink
+
+COMMENT
+
+# slurm-4800370.out
+
+
+: << 'COMMENT'
+
+module load plink/2.00
+
+plink2 \
+        --bfile vg_call_terra_raw/plink_result3/plink \
+        --chr-set 20 no-xy no-mt \
+        --pca \
+	--extract vg_call_terra_raw/plink_result3/plink.prune.in \
+        --threads 30 \
+        --out vg_call_terra_raw/plink_result3/plink
+
+COMMENT
+
+# slurm-4800378.out
+
+#=================================================================================
 #=================================================================================
 #=================================================================================
 
