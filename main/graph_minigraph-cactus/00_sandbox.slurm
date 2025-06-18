@@ -4,7 +4,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=30
 #SBATCH --time=10-00:00:00
-#SBATCH --mem=60GB
+#SBATCH --mem=500GB
 #SBATCH --mail-user=cnnamdi@charlotte.edu
 #SBATCH --mail-type=ALL
 
@@ -51,8 +51,8 @@ map_reads2() {
 #reads_path="/projects/cooper_research1/Wild_Sorghum_WGS"
 #map_reads2 $reads_path/Grif16309_1.fastq "mappings"
 
-reads_path="/projects/cooper_research1/TERRA_RAW"
-map_reads2 $reads_path/PI_673843_TCCGCGAA_R1.fastq.gz
+#reads_path="/projects/cooper_research1/TERRA_RAW"
+#map_reads2 $reads_path/PI_673843_TCCGCGAA_R1.fastq.gz
 
 #=================================================================================
 #
@@ -80,31 +80,125 @@ export -f vg_call
 #
 #=================================================================================
 
+: << 'COMMENT'
 
+for file in vg_call_wild_sorghum_wgs/*.filtered.vcf;
+do
+        echo ""
+        echo "--------------------------------------"
+        sample=$(basename $file | awk -F'.' '{print $1}')
+
+        echo $sample
+	grep -E "0/1|1/0" $file | wc -l
+done
+
+COMMENT
+
+# slurm-4761593.out
+
+#=================================================================================
+#
+#=================================================================================
+
+: << 'COMMENT'
+
+for file in vg_call_wild_sorghum_wgs/*.filtered.vcf;
+do
+        echo ""
+        echo "--------------------------------------"
+        sample=$(basename $file | awk -F'.' '{print $1}')
+
+        echo $sample
+        grep -E "1/2" $file | wc -l
+done
+
+COMMENT
+
+# slurm-4761613.out
 
 #=================================================================================
 #
 #=================================================================================
 
-#=================================================================================
-#
-#=================================================================================
-
-
+#files=$(ls vg_call_wild_sorghum_wgs/*.filtered.vcf | paste -sd ' ' -)
+#echo $files
 
 #=================================================================================
 #
 #=================================================================================
 
+: << 'COMMENT'
+
+awk '!/^#/ 
+	{ for (i=10; i<=NF; i++) 
+		{ split($i, a, ":"); if (a[1] != "./." && a[1] != ".") print a[1] 
+		} 
+	}' vg_call_wild_sorghum_wgs/merged.vcf | sort -u
+
+COMMENT
+
 #=================================================================================
 #
 #=================================================================================
 
+: << 'COMMENT'
 
+grep -v '^#' vg_call_terra_raw/*.filtered.vcf | \
+cut -f10- | \
+tr '\t' '\n' | \
+cut -d ':' -f1 | \
+sort | \
+uniq | \
+paste -sd ',' -
+
+COMMENT
 
 #=================================================================================
 #
 #=================================================================================
+
+: << 'COMMENT'
+
+awk 'BEGIN {i=0}
+        /^#/ {print; next} {
+        i++; $2 = $2 "_" i; print
+        }' OFS='\t' vg_call_terra_raw/merged.filtered.vcf > vg_call_terra_raw/merged.filtered2.vcf
+
+COMMENT
+
+#=================================================================================
+# TERRA_RAW: deduplicating
+#=================================================================================
+
+: << 'COMMENT'
+
+awk '
+  BEGIN { OFS = "\t" }
+  /^#/ { print; next }  # Print header lines unchanged
+  {
+    key = $1 ":" $2      # Combine CHROM and POS
+    if (!(key in seen)) {
+      print
+      seen[key] = 1
+    }
+  }
+' vg_call_terra_raw/merged.filtered.vcf > vg_call_terra_raw/merged.filtered3.vcf
+
+COMMENT
+
+#=================================================================================
+#
+#=================================================================================
+
+module load plink/2.00
+
+plink2 \
+        --vcf vg_call_terra_raw/merged.filtered.vcf \
+        --chr-set 20 no-xy no-mt \
+        --threads 30 \
+	--pca \
+	--geno 0.5 \
+        --out sandbox/plink
 
 #=================================================================================
 #
