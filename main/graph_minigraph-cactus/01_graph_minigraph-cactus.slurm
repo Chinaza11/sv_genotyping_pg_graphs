@@ -114,24 +114,29 @@ conda activate vg_env2
 map_reads() {
         echo ""
         echo "--------------------------------------"
-        read_name=$(basename $1 | awk -F'_' '{print $1}')
-        read_2=$(echo $1 | sed 's/_1/_2/')
+	if [[ "$1" == *_1.fastq || "$1" == *_1.fastq.gz ]]; then
+        	read_name=$(basename $1 | awk -F'_' '{print $1}')
+        	read_2=$(echo $1 | sed 's/_1/_2/')
+	elif [[ "$1" == *1.fq || "$1" == *1.fq.gz ]]; then
+		read_name=$(basename $1 | awk -F'1.' '{print $1}')
+                read_2=$(echo $1 | sed 's/1\./2\./')
+	fi
 
         echo $read_name
         echo $1
         echo $read_2
         echo "--------------------------------------"
 
-        vg giraffe -Z sorghum-pg/sorghum-pg.d2.gbz \
-                -m sorghum-pg/sorghum-pg.d2.min \
-                -d sorghum-pg/sorghum-pg.d2.dist \
+        vg giraffe -Z $2/sorghum-pg.d2.gbz \
+                -m $2/sorghum-pg.d2.min \
+                -d $2/sorghum-pg.d2.dist \
                 --progress \
                 -t 30 \
-                -f $1 -f $read_2 >mappings/$read_name.mapped.gam
+                -f $1 -f $read_2 >$3/$read_name.mapped.gam
 }
 
 #reads_path="/projects/cooper_research1/Wild_Sorghum_WGS"
-#map_reads $reads_path/Grif16309_1.fastq
+#map_reads $reads_path/Grif16309_1.fastq "sorghum-pg" "mappings"
 # slurm-4698163.out
 
 #=================================================================================
