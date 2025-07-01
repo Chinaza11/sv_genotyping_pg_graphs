@@ -2,9 +2,9 @@
 
 #SBATCH --partition=Orion
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=20
+#SBATCH --cpus-per-task=30
 #SBATCH --time=10-00:00:00
-#SBATCH --mem=300GB
+#SBATCH --mem=400GB
 #SBATCH --mail-user=cnnamdi@charlotte.edu
 #SBATCH --mail-type=ALL
 
@@ -136,7 +136,7 @@ map_reads() {
 }
 
 #reads_path="/projects/cooper_research1/Wild_Sorghum_WGS"
-#map_reads $reads_path/Grif16309_1.fastq "sorghum-pg" "mappings"
+#map_reads $reads_path/Grif16309_1.fastq "sorghum-pg" "mappings_wild_sorghum_wgs"
 # slurm-4698163.out
 
 #=================================================================================
@@ -147,7 +147,6 @@ map_reads() {
 map_reads2() {
         echo ""
         echo "--------------------------------------"
-        read_name=$(basename $1 | awk -F'_' '{print $1}')
 
 	if [[ "$1" == *_1.fastq || "$1" == *_1.fastq.gz ]]; then
 		read_name=$(basename $1 | awk -F'_' '{print $1}')
@@ -155,6 +154,9 @@ map_reads2() {
 	elif [[ "$1" == *_R1.fastq || "$1" == *_R1.fastq.gz ]]; then
 		read_name=$(basename $1 | awk -F'.' '{print $1}' | sed 's/_R1//')
 		read_2=$(echo "$1" | sed 's/_R1/_R2/')
+	elif [[ "$1" == *1.fq || "$1" == *1.fq.gz ]]; then
+                read_name=$(basename $1 | awk -F'1.' '{print $1}')
+                read_2=$(echo $1 | sed 's/1\./2\./')
 	else
 		echo "Unrecognized read 1 format: $1" >&2
 		return 1
@@ -165,13 +167,13 @@ map_reads2() {
         echo $read_2
         echo "--------------------------------------"
 
-        vg giraffe -Z sorghum-pg/sorghum-pg.d2.gbz \
-		-m sorghum-pg/sorghum-pg.d2.shortread.withzip.min \
-                -z sorghum-pg/sorghum-pg.d2.shortread.zipcodes \
-                -d sorghum-pg/sorghum-pg.d2.dist \
+        vg giraffe -Z $2/sorghum-pg.d2.gbz \
+		-m $2/sorghum-pg.d2.shortread.withzip.min \
+                -z $2/sorghum-pg.d2.shortread.zipcodes \
+                -d $2/sorghum-pg.d2.dist \
                 --progress \
                 -t 30 \
-                -f $1 -f $read_2 >$2/$read_name.mapped.gam
+                -f $1 -f $read_2 >$3/$read_name.mapped.gam
 }
 
 export -f map_reads2
@@ -181,7 +183,7 @@ export -f map_reads2
 #=================================================================================
 
 #reads_path="/projects/cooper_research1/Wild_Sorghum_WGS"
-#map_reads2 $reads_path/Grif16309_1.fastq "mappings_wild_sorghum_wgs"
+#map_reads2 $reads_path/Grif16309_1.fastq "sorghum-pg" "mappings_wild_sorghum_wgs"
 
 #master.sh was used to submit multiple slurm jobs
 # slurm-4698176.out,4698177,4698178,4698179,4698180,4698181,4698182,4698183,4698184,4698185,4698186,4698187,4698175,4698163
@@ -230,14 +232,14 @@ vg_call() {
         echo "--------------------------------------"
 
         # compute the read support
-        vg pack -x sorghum-pg/sorghum-pg.d2.gbz \
+        vg pack -x $3/sorghum-pg.d2.gbz \
                 -g $1 \
                 -o $2/$sample.pack \
                 -Q 5 \
                 -t 20
 
-        vg call sorghum-pg/sorghum-pg.d2.gbz \
-                -r sorghum-pg/sorghum-pg.d2.snarls \
+        vg call $3/sorghum-pg.d2.gbz \
+                -r $3/sorghum-pg.d2.snarls \
                 -k $2/$sample.pack \
                 -s $sample \
                 -t 20 \
@@ -251,7 +253,8 @@ export -f vg_call
 #=================================================================================
 
 #find mappings_wild_sorghum_wgs/*gam \
-#	| parallel -j 14 --joblog $pjl/vg_call_wild_sorghum_wgs.txt vg_call {} "vg_call_wild_sorghum_wgs"
+#	| parallel -j 14 --joblog $pjl/vg_call_wild_sorghum_wgs.txt \
+#	vg_call {} "vg_call_wild_sorghum_wgs" "sorghum-pg"
 
 #slurm-4699097.out
 
@@ -495,7 +498,7 @@ COMMENT
 #=================================================================================
 
 #reads_path="/projects/cooper_research1/TERRA_RAW"
-#map_reads2 $reads_path/placeholder.fastq.gz "mappings_terra_raw"
+#map_reads2 $reads_path/placeholder.fastq.gz "sorghum-pg" "mappings_terra_raw"
 
 #master.sh was used to submit multiple slurm jobs
 # slurm_log/mapping_terra_raw/
@@ -549,7 +552,7 @@ search_logs() {
 # SV calling and genotyping: TERRA_RAW
 #=================================================================================
 
-#vg_call mappings_terra_raw/placeholder.mapped.gam "vg_call_terra_raw"
+#vg_call mappings_terra_raw/placeholder.mapped.gam "vg_call_terra_raw" "sorghum-pg"
 
 # master.sh was used to submit multiple slurm jobs
 # slurm_log/vg_call_terra_raw/
