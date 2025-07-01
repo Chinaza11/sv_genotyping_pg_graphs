@@ -1,10 +1,10 @@
 #! /bin/bash
 
-#SBATCH --partition=Orion
+#SBATCH --partition=Draco
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=15
+#SBATCH --cpus-per-task=30
 #SBATCH --time=10-00:00:00
-#SBATCH --mem=400GB
+#SBATCH --mem=350GB
 #SBATCH --mail-user=cnnamdi@charlotte.edu
 #SBATCH --mail-type=ALL
 
@@ -42,7 +42,7 @@ COMMENT
 # slurm-4875594.out
 
 #=================================================================================
-# Function for simulating illumina short paired-end reads from a genome
+# function for simulating illumina short paired-end reads from a genome
 #=================================================================================
 
 simulate_short_reads() {
@@ -75,7 +75,6 @@ find evaluation/sandbox/ -type f \( -name "riouncc.fa" -o -name "simulated.fasta
 
 COMMENT
 
-# slurm-4875784.out
 # slurm-4876026.out
 
 #=================================================================================
@@ -96,16 +95,17 @@ cactus-pangenome jobstore \
         --outName sorghum-pg \
         --reference riouncc \
         --vcf --giraffe --gfa --gbz
-# slurm-_________.out
+# slurm-4875865.out
 
-
-#halStats evaluation/sandbox/pangenome/sorghum-pg.full.hal
-# slurm-_________.out
+halStats evaluation/sandbox/pangenome/sorghum-pg.full.hal
+# slurm-4998990.out
 
 COMMENT
 
 #=================================================================================
 # activate conda environment
+# activate ./01_graph_minigraph-cactus.slurm script
+# create base directory
 #=================================================================================
 
 module load anaconda3/2023.09
@@ -113,16 +113,20 @@ conda activate vg_env2
 
 source ./01_graph_minigraph-cactus.slurm
 
+base="evaluation/sandbox"
+
 #=================================================================================
 # recreate minimizer index (that includes zipcodes) and a new zipcodes file
+# map some reads
 #=================================================================================
 
 : << 'COMMENT'
 
-base="evaluation/sandbox"
 map_reads "$base/simulated_reads/riouncc1.fq" "$base/pangenome" "$base/mappings"
 
 COMMENT
+
+# slurm-4999007.out
 
 #=================================================================================
 # map other reads
@@ -130,6 +134,81 @@ COMMENT
 
 : << 'COMMENT'
 
+map_reads2 "$base/simulated_reads/simulated1.fq" "$base/pangenome" "$base/mappings"
+
+COMMENT
+
+# slurm-4999866.out
+
+#=================================================================================
+# stats of alignments (gam file)
+#=================================================================================
+
+: << 'COMMENT'
+
+find $base/mappings/*gam \
+	| parallel -j 2 --joblog $pjl/vg_stats_eval_sandbox.txt vg_stats {}
+
+COMMENT
+
+# slurm-5012567.out
+
+#=================================================================================
+# SV calling and genotyping
+#=================================================================================
+
+# compute the snarls
+#vg snarls $base/pangenome/sorghum-pg.d2.gbz > $base/pangenome/sorghum-pg.d2.snarls
+# slurm-5012576.out
+
+
+: << 'COMMENT'
+
+find $base/mappings/*gam \
+	| parallel -j 2 --joblog $pjl/vg_call_eval_sandbox.txt \
+	vg_call {} "$base/vg_call" "$base/pangenome"
+
+COMMENT
+
+#slurm-5012581.out
+
+#=================================================================================
+# filter VCF file, exclude rows with lowdepth and lowad and rows with SVs less than 50bp
+#=================================================================================
+
+: << 'COMMENT'
+
+#rm $base/vg_call/*filtered.vcf
+
+find $base/vg_call/*vcf \
+       | parallel -j 2 --joblog $pjl/filter_vcf_eval_sandbox.txt filter_vcf {} "$base/vg_call/"
+
+#slurm-5026737.out
+
+COMMENT
+
+#=================================================================================
+# map simulated reads to original pangenome that was constructed without the simulated genome
+# genotype mapped reads, filter it
+#=================================================================================
+
+# map_reads2 "$base/simulated_reads/simulated1.fq" "sorghum-pg" "$base/mappings/mapped_to_original_pangenome"
+# ==> slurm-5026730.out
+
+# vg_call "$base/mappings/mapped_to_original_pangenome/simulated.mapped.gam" \	
+# 	"$base/vg_call/mapped_to_original_pangenome" "sorghum-pg"
+# ==> slurm-_______.out
+
+# rm $base/vg_call/mapped_to_original_pangenome/*.filtered.vcf
+# filter_vcf $base/vg_call/mapped_to_original_pangenome/*.vcf "$base/vg_call/mapped_to_original_pangenome"
+# ==> slurm-_______.out
+
+#=================================================================================
+#
+#=================================================================================
+
+: << 'COMMENT'
+
 
 
 COMMENT
@@ -151,6 +230,21 @@ COMMENT
 #=================================================================================
 #
 #=================================================================================
+
+: << 'COMMENT'
+COMMENT
+
+#=================================================================================
+#
+#=================================================================================
+
+: << 'COMMENT'
+COMMENT
+
+#=================================================================================
+#
+#=================================================================================
+
 
 echo ""
 echo "======================================================"
