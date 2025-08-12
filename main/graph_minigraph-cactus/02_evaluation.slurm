@@ -2,7 +2,7 @@
 
 #SBATCH --partition=Orion
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=30
+#SBATCH --cpus-per-task=15
 #SBATCH --time=10-00:00:00
 #SBATCH --mem=100GB
 #SBATCH --mail-user=cnnamdi@charlotte.edu
@@ -21,7 +21,29 @@ module load parallel/20240422
 pjl="parallel_jobs_log"
 
 #=================================================================================
-# simulating structural variation
+# Plan for evaluating the SVs genotyped by the pan-genome graph: Plan1
+#=================================================================================
+
+: << 'COMMENT'
+
+- Pick a genotype: riouncc.
+- Simulate SVs using SURVIVOR. This outputs a new altered genome of the riouncc.
+- Rebuild the pan-genome graph and include this newly altered genome.
+- Simulate short reads from the altered genome and the original genome using ART.
+- Map simulated short reads (from the altered and the original genome) to the new pan-genome graph and genotype variants.
+- Compare SVs called from both simulated short reads data (from the altered and the original genome). Tools: Truvari. Ideal outcome: 
+	- All SVs from the simulated short read data from the original genome is present in the SVs from the altered genome.
+	- The difference between the SVs in the original genome and the altered genome is the artificial SVs created.
+	- Extraneous SVs from the altered genome simulated short reads are minimal or non-existent.
+
+- At the end of my analysis I realized that Plan1 will not allow me achieve my goal 
+  because simulated short reads data from original genome and altered genome might 
+  cover different regions of the pan-genome.
+
+COMMENT
+
+#=================================================================================
+# simulating structural variants
 #=================================================================================
 
 : << 'COMMENT'
@@ -32,6 +54,7 @@ conda activate survivor
 cd evaluation/sandbox/
 
 # SURVIVOR simSV parameter_file
+#parameter_file was edited so SURVIVOR simulates 2000 indels of length 50-2000
 
 SURVIVOR simSV riouncc.fa parameter_file 0 0 simulated
 
@@ -189,6 +212,24 @@ find $base/vg_call/*vcf \
 COMMENT
 
 #=================================================================================
+# Plan for evaluating the SVs genotyped by the pan-genome graph: Plan2
+#=================================================================================
+
+: << 'COMMENT'
+
+- Pick a genotype: riouncc.
+- Simulate SVs using SURVIVOR. This outputs a new altered genome of the riouncc.
+- Rebuild the pan-genome graph and include this newly altered genome.
+- Simulate short reads from the altered genome using ART.
+- Map simulated short reads to the original pan-genome graph (that does not have the altered genome) and genotype variants.
+- Map simulated short reads to the new pan-genome graph (that has the altered genome) and genotype variants.
+- Compare SVs genotyped when the original pan-genome graph is used vs when the new pan-genome graph is used. Tools: Truvari. Ideal outcome:
+	- All SVs genotyped when the original pan-genome graph is used is present in the SVs genotyped when the new pan-genome graph is used.
+	- The difference between the two groups of SVs is the artificial SVs created.
+
+COMMENT
+
+#=================================================================================
 # map simulated reads to original pangenome that was constructed without the simulated genome
 # genotype mapped reads, filter it
 #=================================================================================
@@ -204,17 +245,91 @@ COMMENT
 #filter_vcf $base/vg_call/mapped_to_original_pangenome/simulated.vcf "$base/vg_call/mapped_to_original_pangenome"
 
 #=================================================================================
-#
+# compare SVs genotyped when the original pan-genome graph is used vs when the new pan-genome graph is used
 #=================================================================================
 
 : << 'COMMENT'
 
+# --------------------------------------------------------------------------------
+# copy SVs to be compared to truvari folder
+cp $base/vg_call/simulated.filtered.vcf $base/truvari/sv_from_mapping_to_new_pangenome.vcf
+cp $base/vg_call/mapped_to_original_pangenome/simulated.filtered.vcf $base/truvari/sv_from_mapping_to_original_pangenome.vcf
 
+# --------------------------------------------------------------------------------
+
+cd $base/truvari
+
+# --------------------------------------------------------------------------------
+# removing riouncc#0# from chromosome name so it doesn't throw an error
+sed -i 's/riouncc#0#//g' sv_from_mapping_to_new_pangenome.vcf
+sed -i 's/riouncc#0#//g' sv_from_mapping_to_original_pangenome.vcf
+
+# --------------------------------------------------------------------------------
+# remove multiallelic loci from vcf files so truvari doesn't throw an error
+
+remove_multiallelic_loci() {
+
+        local sample=$(basename $file | awk -F'.' '{print $1}')
+        echo "sample:" $sample
+
+        echo ""
+        local unique_genotypes=$(grep -v '^#' $1 | cut -f10- | \
+                                        tr '\t' '\n' | cut -d ':' -f1 | \
+                                        sort | uniq | paste -sd '|' -)
+
+        echo "unique_genotypes:" $unique_genotypes
+
+        grep -Ev '1/2' $1 > $sample.filtered2.vcf
+
+        echo ""
+        local unique_genotypes=$(grep -v '^#' $sample.filtered2.vcf | cut -f10- | \
+                                        tr '\t' '\n' | cut -d ':' -f1 | \
+                                        sort | uniq | paste -sd '|' -)
+
+        echo "unique_genotypes:" $unique_genotypes
+
+}
+
+for file in *.vcf;
+do
+        echo "--------------------------------------------------------------"
+        echo $file
+        remove_multiallelic_loci $file
+done
+
+
+# --------------------------------------------------------------------------------
+
+# gzip vcf files, index them and run truvari
+
+module load samtools/1.19
+
+bgzip *filtered2.vcf
+for file in *.gz; do echo $file; tabix -p vcf $file; done
+
+truvari bench -b sv_from_mapping_to_new_pangenome.filtered2.vcf.gz \
+	-c sv_from_mapping_to_original_pangenome.filtered2.vcf.gz -o output_dir
+
+COMMENT
+
+#slurm-5717474.out
+
+#=================================================================================
+# comments from truvari result
+#=================================================================================
+
+: << 'COMMENT'
+
+- Based on the ideal outcome in Plan2, 128 SVs (FN) should be the newly simulated SVs.
+	- Below code will investigate this.
+- Expected less non-matching calls from sv_from_mapping_to_original_pangenome.filtered2.vcf,
+  110 SVs (FP) is high.
+	- Need to look into Truvari parameters some more.
 
 COMMENT
 
 #=================================================================================
-#
+# function for extracting the simulated deletions
 #=================================================================================
 
 extract_fasta_region() {
@@ -256,7 +371,7 @@ extract_fasta_region() {
 }
 
 #=================================================================================
-#
+# extracting the simulated deletions from riouncc that gave rise to the altered genome
 #=================================================================================
 
 : << 'COMMENT'
@@ -275,7 +390,7 @@ cd $base
 COMMENT
 
 #=================================================================================
-#
+# function for extracting the deletions and insertions from a VCF file into individual files
 #=================================================================================
 
 process_vcf_variants() {
@@ -317,18 +432,26 @@ process_vcf_variants() {
 }
 
 #=================================================================================
-#
+# extracting the deletions and insertions in fn.vcf into individual files
 #=================================================================================
 
 : << 'COMMENT'
 
 cd $base
-process_vcf_variants fn.vcf "fn"
+mkdir -p fn
+cp truvari/output_dir/fn.vcf.gz fn
+
+cd fn
+gunzip fn.vcf.gz
+
+process_vcf_variants fn.vcf "individual_fn"
+ 
+# slurm-5731284.out
 
 COMMENT
 
 #=================================================================================
-#
+# function for extracting sequences in a fasta file into individual files
 #=================================================================================
 
 split_fasta_to_files() {
@@ -362,7 +485,8 @@ split_fasta_to_files() {
 }
 
 #=================================================================================
-#
+# extracting the sequences in the simulated insertions and deletions fasta files
+# into individual files
 #=================================================================================
 
 : << 'COMMENT'
@@ -374,7 +498,8 @@ split_fasta_to_files simulated.deletions.fa simulated.deletions
 COMMENT
 
 #=================================================================================
-#
+# function for comparing the fn variants with the simulated variants using the 
+# smith-waterman algorithm
 #=================================================================================
 
 variant_alignment() {
@@ -445,7 +570,7 @@ variant_alignment() {
 export -f variant_alignment
 
 #=================================================================================
-#
+# compare the fn variants with the simulated variants using the smith-waterman algorithm
 #=================================================================================
 
 : << 'COMMENT'
@@ -454,24 +579,28 @@ module load emboss/6.6.0
 
 #variant_alignment $base/fn/chr1_36797141_DELETION.txt "fn"
 
-find $base/fn/*.txt | parallel -j 60 --joblog $pjl/variant_alignment.txt variant_alignment {} "fn"
+find $base/fn/individual_fn/*.txt | parallel -j 60 --joblog $pjl/variant_alignment.txt variant_alignment {} "fn/individual_fn"
+
+# slurm-5731421.out
 
 COMMENT
 
 #=================================================================================
-#
+# get the top 5 result of the alignment of each fn variants to the simulated variants 
 #=================================================================================
 
-: << 'COMMENT'
+#: << 'COMMENT'
 
-for file in $base/fn/*txt; do
-	folder_name=$(basename $file .txt)
-	echo ""
-	echo $folder_name
-	head -n 6 $base/fn/$folder_name/alignment_summary.tsv
-done
+{
+	for file in $base/fn/individual_fn/*txt; do
+		folder_name=$(basename $file .txt)
+		echo ""
+		echo $folder_name
+		head -n 6 $base/fn/individual_fn/$folder_name/alignment_summary.tsv
+	done
+} > $base/fn/top_5_result.txt
 
-COMMENT
+#COMMENT
 
 # slurm-5208619.out
 
