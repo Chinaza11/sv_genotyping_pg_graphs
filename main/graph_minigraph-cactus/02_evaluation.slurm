@@ -589,7 +589,7 @@ COMMENT
 # get the top 5 result of the alignment of each fn variants to the simulated variants 
 #=================================================================================
 
-#: << 'COMMENT'
+: << 'COMMENT'
 
 {
 	for file in $base/fn/individual_fn/*txt; do
@@ -600,29 +600,91 @@ COMMENT
 	done
 } > $base/fn/top_5_result.txt
 
-#COMMENT
-
-# slurm-5208619.out
+COMMENT
 
 #=================================================================================
-#
+# examining the exact matches/close enough matches between the fn variants and the
+# simulated variants
 #=================================================================================
 
 : << 'COMMENT'
 
+for file in $base/fn/individual_fn/*txt; do
+    folder_name=$(basename $file .txt)
 
+    result=$(head -n 11 "$base/fn/individual_fn/$folder_name/alignment_summary.tsv" \
+        | tail -n +2 \
+        | awk '{
+            a_len = $2
+            b_len = $4
+
+            split($5, id_raw, "/")
+            id_pct = gensub(/%/, "", "g", $6)
+
+            smallest = (a_len < b_len) ? a_len : b_len
+            largest = (a_len > b_len) ? a_len : b_len
+
+            if (id_raw[2] >= 0.75 * largest &&
+                ((a_len - b_len) < 0 ? (b_len - a_len) : (a_len - b_len)) <= 0.25 * smallest &&
+                id_pct > 80) {
+                print
+            }
+        }')
+
+    if [[ -n $result ]]; then
+        echo ""
+        echo "$folder_name"
+        echo "$result"
+    fi
+done
 
 COMMENT
 
+# slurm-5777606.out: no exact matches or close enough matches
+
 #=================================================================================
-#
+# examining simulated variants localized in a subsection of the fn variants and vice versa
 #=================================================================================
 
 : << 'COMMENT'
 
+count=0
 
+for file in $base/fn/individual_fn/*txt; do
+    folder_name=$(basename $file .txt)
+
+    result=$(head -n 11 "$base/fn/individual_fn/$folder_name/alignment_summary.tsv" \
+        | tail -n +2 \
+        | awk '{
+            a_len = $2
+            b_len = $4
+
+            split($5, id_raw, "/")
+            id_pct = gensub(/%/, "", "g", $6)
+
+            smallest = (a_len < b_len) ? a_len : b_len
+            largest = (a_len > b_len) ? a_len : b_len
+
+            if ((id_raw[2] >= 0.75 * smallest) && id_pct > 90) {
+                print
+            }
+        }')
+
+    if [[ -n $result ]]; then
+        ((count++))
+	echo ""
+        echo "$folder_name"
+        echo "$result"
+    fi
+done
+
+echo ""
+echo "Total matches: $count"
 
 COMMENT
+
+# slurm-5783563.out: 18 variants (out of the 128). Would be less than 18 after removal
+# 		     of the TATA regions.
 
 #=================================================================================
 #
