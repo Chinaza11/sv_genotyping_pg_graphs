@@ -2,9 +2,9 @@
 
 #SBATCH --partition=Orion
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=30
+#SBATCH --cpus-per-task=15
 #SBATCH --time=10-00:00:00
-#SBATCH --mem=500GB
+#SBATCH --mem=200GB
 #SBATCH --mail-user=cnnamdi@charlotte.edu
 #SBATCH --mail-type=ALL
 
@@ -74,7 +74,6 @@ vg_call() {
 export -f vg_call
 
 #find mappings/*gam | parallel -j 14 --joblog $pjl/sandbox_vg_call.txt vg_call {} "mappings"
-
 
 #=================================================================================
 #
@@ -190,6 +189,8 @@ COMMENT
 #
 #=================================================================================
 
+: << 'COMMENT'
+
 module load plink/2.00
 
 plink2 \
@@ -200,21 +201,70 @@ plink2 \
 	--geno 0.5 \
         --out sandbox/plink
 
-#=================================================================================
-#
-#=================================================================================
-
-
+COMMENT
 
 #=================================================================================
 #
 #=================================================================================
 
+: << 'COMMENT'
+
+module load anaconda3/2023.09
+conda activate vg_env2
+
+read_1="/projects/cooper_research1/TERRA_RAW/PI145626_TCTCGCGC-TATAGCCT_R1.fastq.gz"
+read_2="/projects/cooper_research1/TERRA_RAW/PI145626_TCTCGCGC-TATAGCCT_R2.fastq.gz"
+sample_name="PI145626_TCTCGCGC-TATAGCCT"
+
+vg giraffe -Z sorghum-pg/sorghum-pg.d2.gbz \
+	-m sorghum-pg/sorghum-pg.d2.shortread.withzip.min \
+	-z sorghum-pg/sorghum-pg.d2.shortread.zipcodes \
+	-d sorghum-pg/sorghum-pg.d2.dist \
+	--progress \
+	-t 30 \
+	--log-reads \
+	-f $read_1 -f $read_2 >sandbox/$sample_name.mapped.gam
+
+COMMENT
+
 #=================================================================================
 #
 #=================================================================================
 
+: << 'COMMENT'
 
+cd  ~/packages/varsim/tests/quickstart_test/ 
+./quickstart.sh
+
+# slurm-5130429.out
+
+COMMENT
+
+#=================================================================================
+#
+#=================================================================================
+
+: << 'COMMENT'
+
+cd /projects/cooper_research2/chinaza/packages/varsim/tests/quickstart_test/
+./quickstart.sh
+
+# slurm-5135830.out
+
+COMMENT
+
+#=================================================================================
+#
+#=================================================================================
+
+#: << 'COMMENT'
+
+cd /projects/cooper_research2/chinaza/packages/varsim/tests/quickstart_test_2/
+./quickstart.sh
+
+# slurm-___.out
+
+#COMMENT
 
 #=================================================================================
 #
