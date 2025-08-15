@@ -683,8 +683,7 @@ echo "Total matches: $count"
 
 COMMENT
 
-# slurm-5783563.out: 18 variants (out of the 128). Would be less than 18 after removal
-# 		     of the TATA regions.
+# slurm-5783563.out: 18 variants (out of the 128).
 
 #=================================================================================
 #
